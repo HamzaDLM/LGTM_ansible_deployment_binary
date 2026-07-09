@@ -26,7 +26,9 @@ grafana_home_dir: /opt/lgtm/grafana
 lgtm_bind_address: "0.0.0.0"
 grafana_http_port: 3000
 loki_http_port: 3100
+loki_grpc_port: 9096
 tempo_http_port: 3200
+tempo_grpc_port: 9097
 prometheus_http_port: 9090
 
 agent_install_dir: /opt/observability-agent
@@ -42,13 +44,13 @@ monitoring_gateway_listen_port: 443
 monitoring_gateway_url: "{{ monitoring_gateway_scheme }}://{{ monitoring_gateway_host }}:{{ monitoring_gateway_listen_port }}"
 monitoring_gateway_tls_enabled: true
 monitoring_gateway_tls_server_name: "{{ monitoring_gateway_host }}"
-monitoring_gateway_tls_insecure_skip_verify: false
+monitoring_gateway_tls_insecure_skip_verify: true
 
 nginx_config_dir: /etc/nginx/conf.d
 nginx_tls_dir: /etc/nginx/tls
 nginx_ssl_certificate: "{{ nginx_tls_dir }}/{{ monitoring_gateway_host }}.crt"
 nginx_ssl_certificate_key: "{{ nginx_tls_dir }}/{{ monitoring_gateway_host }}.key"
-nginx_generate_self_signed_cert: false
+nginx_generate_self_signed_cert: true
 nginx_self_signed_cert_days: 365
 nginx_client_max_body_size: 50m
 nginx_loki_upstream: "127.0.0.1:{{ loki_http_port }}"

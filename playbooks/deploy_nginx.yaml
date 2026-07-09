@@ -43,6 +43,8 @@
           - "{{ nginx_self_signed_cert_days | string }}"
           - -subj
           - "/CN={{ monitoring_gateway_server_name }}"
+          - -addext
+          - "subjectAltName=DNS:{{ monitoring_gateway_server_name }}"
       args:
         creates: "{{ nginx_ssl_certificate }}"
       when:

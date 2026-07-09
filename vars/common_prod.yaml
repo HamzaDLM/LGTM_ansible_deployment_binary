@@ -26,7 +26,9 @@ grafana_home_dir: /opt/lgtm/grafana
 lgtm_bind_address: "0.0.0.0"
 grafana_http_port: 3000
 loki_http_port: 3100
+loki_grpc_port: 9096
 tempo_http_port: 3200
+tempo_grpc_port: 9097
 prometheus_http_port: 9090
 
 agent_install_dir: /opt/observability-agent
