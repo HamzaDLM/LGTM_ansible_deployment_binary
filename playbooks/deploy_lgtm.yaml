@@ -9,9 +9,13 @@
     lgtm_components:
       - name: grafana
         enabled: "{{ (monitoring_components_enabled | default({})).grafana | default(true) | bool }}"
+        install_method: "{{ (monitoring_component_install_methods | default({})).grafana | default('binary') }}"
         description: Grafana
         binary_src: grafana-server
         binary_dest: grafana-server
+        deb_src: "{{ (monitoring_component_deb_files | default({})).grafana | default('grafana.deb') }}"
+        binary_exec_path: "{{ lgtm_install_dir }}/bin/grafana-server"
+        deb_exec_path: "{{ (monitoring_component_deb_exec_paths | default({})).grafana | default('/usr/sbin/grafana-server') }}"
         config_file: grafana.ini
         data_dir: "{{ lgtm_data_dir }}/grafana"
         service_args: "--config={{ lgtm_config_dir }}/grafana.ini --homepath={{ grafana_home_dir }}"
@@ -27,9 +31,13 @@
 
       - name: loki
         enabled: "{{ (monitoring_components_enabled | default({})).loki | default(true) | bool }}"
+        install_method: "{{ (monitoring_component_install_methods | default({})).loki | default('binary') }}"
         description: Loki
         binary_src: loki
         binary_dest: loki
+        deb_src: "{{ (monitoring_component_deb_files | default({})).loki | default('loki.deb') }}"
+        binary_exec_path: "{{ lgtm_install_dir }}/bin/loki"
+        deb_exec_path: "{{ (monitoring_component_deb_exec_paths | default({})).loki | default('/usr/bin/loki') }}"
         config_file: loki.yaml
         data_dir: "{{ lgtm_data_dir }}/loki"
         service_args: "-config.file={{ lgtm_config_dir }}/loki.yaml"
@@ -63,9 +71,13 @@
 
       - name: tempo
         enabled: "{{ (monitoring_components_enabled | default({})).tempo | default(true) | bool }}"
+        install_method: "{{ (monitoring_component_install_methods | default({})).tempo | default('binary') }}"
         description: Tempo
         binary_src: tempo
         binary_dest: tempo
+        deb_src: "{{ (monitoring_component_deb_files | default({})).tempo | default('tempo.deb') }}"
+        binary_exec_path: "{{ lgtm_install_dir }}/bin/tempo"
+        deb_exec_path: "{{ (monitoring_component_deb_exec_paths | default({})).tempo | default('/usr/bin/tempo') }}"
         config_file: tempo.yaml
         data_dir: "{{ lgtm_data_dir }}/tempo"
         service_args: "-config.file={{ lgtm_config_dir }}/tempo.yaml"
@@ -89,9 +101,13 @@
 
       - name: prometheus
         enabled: "{{ (monitoring_components_enabled | default({})).prometheus | default(true) | bool }}"
+        install_method: "{{ (monitoring_component_install_methods | default({})).prometheus | default('binary') }}"
         description: Prometheus
         binary_src: prometheus
         binary_dest: prometheus
+        deb_src: "{{ (monitoring_component_deb_files | default({})).prometheus | default('prometheus.deb') }}"
+        binary_exec_path: "{{ lgtm_install_dir }}/bin/prometheus"
+        deb_exec_path: "{{ (monitoring_component_deb_exec_paths | default({})).prometheus | default('/usr/bin/prometheus') }}"
         config_file: prometheus.yaml
         data_dir: "{{ lgtm_data_dir }}/prometheus"
         service_args: >-
@@ -123,6 +139,14 @@
         create_home: false
         shell: /usr/sbin/nologin
         system: true
+
+    - name: Validate monitoring install methods
+      ansible.builtin.assert:
+        that:
+          - item.install_method in ['binary', 'deb']
+        fail_msg: "Unsupported install_method '{{ item.install_method }}' for {{ item.name }}. Use 'binary' or 'deb'."
+      loop: "{{ lgtm_components }}"
+      when: item.enabled | bool
 
     - name: Create monitoring base directories
       ansible.builtin.file:
@@ -156,7 +180,15 @@
       loop: "{{ lgtm_components }}"
       when: item.enabled | bool
 
-    - name: Install monitoring binaries
+    - name: Create monitoring package cache directory
+      ansible.builtin.file:
+        path: "{{ monitoring_package_cache_dir | default('/tmp/monitoring-packages') }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install monitoring binary artifacts
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../files/bin/{{ item.binary_src }}"
         dest: "{{ lgtm_install_dir }}/bin/{{ item.binary_dest }}"
@@ -164,7 +196,31 @@
         group: root
         mode: "0755"
       loop: "{{ lgtm_components }}"
-      when: item.enabled | bool
+      when:
+        - item.enabled | bool
+        - item.install_method == 'binary'
+      notify: Restart monitoring services
+
+    - name: Stage monitoring deb artifacts
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/deb/{{ item.deb_src }}"
+        dest: "{{ monitoring_package_cache_dir | default('/tmp/monitoring-packages') }}/{{ item.deb_src }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ lgtm_components }}"
+      when:
+        - item.enabled | bool
+        - item.install_method == 'deb'
+
+    - name: Install monitoring deb packages
+      ansible.builtin.apt:
+        deb: "{{ monitoring_package_cache_dir | default('/tmp/monitoring-packages') }}/{{ item.deb_src }}"
+        policy_rc_d: 101
+      loop: "{{ lgtm_components }}"
+      when:
+        - item.enabled | bool
+        - item.install_method == 'deb'
       notify: Restart monitoring services
 
     - name: Write monitoring configs
@@ -192,7 +248,7 @@
           User={{ observability_user }}
           Group={{ observability_group }}
           WorkingDirectory={{ item.data_dir }}
-          ExecStart={{ lgtm_install_dir }}/bin/{{ item.binary_dest }} {{ item.service_args }}
+          ExecStart={{ item.deb_exec_path if item.install_method == 'deb' else item.binary_exec_path }} {{ item.service_args }}
           Restart=on-failure
           RestartSec=5
           LimitNOFILE=65536
