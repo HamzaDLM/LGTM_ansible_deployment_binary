@@ -22,6 +22,7 @@ Minimal Ansible project for deploying a Grafana, Loki, Tempo, and Prometheus mon
 ## Gateway routes
 
 ```text
+/                                                        -> Grafana on nginx_grafana_upstream
 /loki/                                                   -> Loki on nginx_loki_upstream
 /prometheus/                                             -> Prometheus on nginx_prometheus_upstream, with /prometheus stripped
 /opentelemetry.proto.collector.trace.v1.TraceService/Export -> Tempo OTLP gRPC on nginx_tempo_grpc_upstream

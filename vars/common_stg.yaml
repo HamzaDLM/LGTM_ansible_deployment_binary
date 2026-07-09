@@ -53,6 +53,7 @@ nginx_ssl_certificate_key: "{{ nginx_tls_dir }}/{{ monitoring_gateway_host }}.ke
 nginx_generate_self_signed_cert: true
 nginx_self_signed_cert_days: 365
 nginx_client_max_body_size: 50m
+nginx_grafana_upstream: "127.0.0.1:{{ grafana_http_port }}"
 nginx_loki_upstream: "127.0.0.1:{{ loki_http_port }}"
 nginx_prometheus_upstream: "127.0.0.1:{{ prometheus_http_port }}"
 nginx_tempo_grpc_upstream: "127.0.0.1:4317"

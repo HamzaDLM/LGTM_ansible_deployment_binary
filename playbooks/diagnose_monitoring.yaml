@@ -1,0 +1,77 @@
+---
+- name: Diagnose monitoring services
+  hosts: "{{ target_hosts | default('all') }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../vars/common_{{ env | default('dev') }}.yaml"
+  vars:
+    monitoring_log_lines: "{{ log_lines | default(120) }}"
+    monitoring_log_services: "{{ services | default(['grafana', 'loki', 'tempo', 'prometheus', 'alloy', 'nginx']) }}"
+
+  tasks:
+    - name: Collect service status
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - status
+          - "{{ item }}.service"
+          - --no-pager
+      loop: "{{ monitoring_log_services }}"
+      register: monitoring_service_status
+      changed_when: false
+      failed_when: false
+
+    - name: Print service status
+      ansible.builtin.debug:
+        msg: |
+          ===== systemctl status {{ item.item }}.service =====
+          rc={{ item.rc }}
+          {{ item.stdout | default('') }}
+          {{ item.stderr | default('') }}
+      loop: "{{ monitoring_service_status.results }}"
+
+    - name: Collect recent service logs
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - -u
+          - "{{ item }}.service"
+          - -n
+          - "{{ monitoring_log_lines | string }}"
+          - --no-pager
+          - --output
+          - short-iso
+      loop: "{{ monitoring_log_services }}"
+      register: monitoring_service_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Print recent service logs
+      ansible.builtin.debug:
+        msg: |
+          ===== journalctl -u {{ item.item }}.service -n {{ monitoring_log_lines }} =====
+          rc={{ item.rc }}
+          {{ item.stdout | default('') }}
+          {{ item.stderr | default('') }}
+      loop: "{{ monitoring_service_logs.results }}"
+
+    - name: Collect listening ports
+      ansible.builtin.command:
+        argv:
+          - ss
+          - -lntp
+      register: monitoring_listening_ports
+      changed_when: false
+      failed_when: false
+
+    - name: Print relevant listening ports
+      ansible.builtin.debug:
+        msg: |
+          ===== ss -lntp relevant ports =====
+          {{ monitoring_listening_ports.stdout_lines
+             | default([])
+             | select('search', ':(3000|3100|3200|4317|4318|9090|9096|9097|12345|443)\\b')
+             | list
+             | join('\n') }}
+          {{ monitoring_listening_ports.stderr | default('') }}
