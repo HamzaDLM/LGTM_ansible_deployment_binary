@@ -13,7 +13,7 @@ monitoring_components_enabled:
   nginx: true
 
 monitoring_component_files:
-  grafana: grafana-server
+  grafana: grafana.deb
   loki: loki
   tempo: tempo.deb
   prometheus: prometheus

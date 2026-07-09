@@ -10,13 +10,14 @@
       - name: grafana
         enabled: "{{ (monitoring_components_enabled | default({})).grafana | default(true) | bool }}"
         description: Grafana
-        artifact_file: "{{ (monitoring_component_files | default({})).grafana | default('grafana-server') }}"
+        artifact_file: "{{ (monitoring_component_files | default({})).grafana | default('grafana.deb') }}"
         binary_dest: grafana-server
         binary_exec_path: "{{ lgtm_install_dir }}/bin/grafana-server"
-        deb_exec_path: /usr/sbin/grafana-server
+        deb_exec_path: /usr/share/grafana/bin/grafana
         config_file: grafana.ini
         data_dir: "{{ lgtm_data_dir }}/grafana"
         service_args: "--config={{ lgtm_config_dir }}/grafana.ini --homepath={{ grafana_home_dir }}"
+        deb_service_args: "server --config={{ lgtm_config_dir }}/grafana.ini --homepath=/usr/share/grafana"
         config_content: |
           [paths]
           data = {{ lgtm_data_dir }}/grafana
@@ -166,7 +167,9 @@
         owner: "{{ observability_user }}"
         group: "{{ observability_group }}"
         mode: "0755"
-      when: (monitoring_components_enabled | default({})).grafana | default(true) | bool
+      when:
+        - (monitoring_components_enabled | default({})).grafana | default(true) | bool
+        - not ((monitoring_component_files | default({})).grafana | default('grafana.deb') | lower | regex_search('\\.deb$'))
 
     - name: Create monitoring component data directories
       ansible.builtin.file:
@@ -246,7 +249,7 @@
           User={{ observability_user }}
           Group={{ observability_group }}
           WorkingDirectory={{ item.data_dir }}
-          ExecStart={{ item.deb_exec_path if (item.artifact_file | lower | regex_search('\.deb$')) else item.binary_exec_path }} {{ item.service_args }}
+          ExecStart={{ item.deb_exec_path if (item.artifact_file | lower | regex_search('\.deb$')) else item.binary_exec_path }} {{ item.deb_service_args | default(item.service_args) if (item.artifact_file | lower | regex_search('\.deb$')) else item.service_args }}
           Restart=on-failure
           RestartSec=5
           LimitNOFILE=65536
