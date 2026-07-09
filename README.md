@@ -16,6 +16,7 @@ Minimal Ansible project for deploying a Grafana, Loki, Tempo, and Prometheus mon
 - Set individual entries under `monitoring_components_enabled` to `false` to skip installing that component. For example, `grafana: false` skips Grafana while still allowing Loki, Tempo, Prometheus, Alloy, and Nginx to be managed.
 - Set artifact filenames under `monitoring_component_files`. Files ending in `.deb` are installed from `files/deb/`; every other file is copied from `files/bin/` as a raw binary.
 - Grafana should normally be installed from `grafana.deb`; a single `grafana-server` binary is not enough unless `grafana_home_dir` points to a full Grafana distribution with `conf/defaults.ini` and UI assets.
+- Grafana datasources are provisioned automatically for Prometheus, Loki, and Tempo under `/etc/lgtm/grafana/provisioning/datasources/monitoring.yaml`.
 - Set `monitoring_gateway_host` to the DNS name agents should use for the Nginx gateway. The generated Alloy config sends Loki and Prometheus traffic to `https://<gateway>:443`, and sends Tempo OTLP gRPC to `<gateway>:443`.
 - Provide `nginx_ssl_certificate` and `nginx_ssl_certificate_key` on the gateway host before running `deploy_nginx.yaml`, or set `nginx_generate_self_signed_cert: true` for non-production environments.
 - Replace every placeholder under `files/bin/` with the real Linux binary before running.

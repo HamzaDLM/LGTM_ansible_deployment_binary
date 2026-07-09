@@ -23,6 +23,7 @@
           data = {{ lgtm_data_dir }}/grafana
           logs = {{ lgtm_data_dir }}/grafana/logs
           plugins = {{ lgtm_data_dir }}/grafana/plugins
+          provisioning = {{ lgtm_config_dir }}/grafana/provisioning
 
           [server]
           http_addr = {{ lgtm_bind_address }}
@@ -160,6 +161,19 @@
         - "{{ lgtm_config_dir }}"
         - "{{ lgtm_data_dir }}"
 
+    - name: Create Grafana provisioning directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0755"
+      loop:
+        - "{{ lgtm_config_dir }}/grafana"
+        - "{{ lgtm_config_dir }}/grafana/provisioning"
+        - "{{ lgtm_config_dir }}/grafana/provisioning/datasources"
+      when: (monitoring_components_enabled | default({})).grafana | default(true) | bool
+
     - name: Create Grafana home directory
       ansible.builtin.file:
         path: "{{ grafana_home_dir }}"
@@ -170,6 +184,45 @@
       when:
         - (monitoring_components_enabled | default({})).grafana | default(true) | bool
         - not ((monitoring_component_files | default({})).grafana | default('grafana.deb') | lower | regex_search('\\.deb$'))
+
+    - name: Provision Grafana datasources
+      ansible.builtin.copy:
+        dest: "{{ lgtm_config_dir }}/grafana/provisioning/datasources/monitoring.yaml"
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0644"
+        content: |
+          apiVersion: 1
+
+          datasources:
+            - name: Prometheus
+              uid: prometheus
+              type: prometheus
+              access: proxy
+              url: http://127.0.0.1:{{ prometheus_http_port }}
+              isDefault: true
+              editable: true
+
+            - name: Loki
+              uid: loki
+              type: loki
+              access: proxy
+              url: http://127.0.0.1:{{ loki_http_port }}
+              editable: true
+
+            - name: Tempo
+              uid: tempo
+              type: tempo
+              access: proxy
+              url: http://127.0.0.1:{{ tempo_http_port }}
+              editable: true
+              jsonData:
+                tracesToLogsV2:
+                  datasourceUid: loki
+                tracesToMetrics:
+                  datasourceUid: prometheus
+      when: (monitoring_components_enabled | default({})).grafana | default(true) | bool
+      notify: Restart monitoring services
 
     - name: Create monitoring component data directories
       ansible.builtin.file:
