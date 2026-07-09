@@ -1,8 +1,8 @@
-Place local Debian packages here when a component install method is set to `deb`.
+Place local Debian packages here.
 
-Default filenames are configured in `vars/common_*.yaml`:
+Any component file ending in `.deb` is installed from this directory. Default package filenames are configured in `monitoring_component_files` inside `vars/common_*.yaml`:
 
 - `alloy.deb`
 - `tempo.deb`
 
-You can also use versioned package names by changing `monitoring_component_deb_files`.
+You can also use versioned package names by changing `monitoring_component_files`.

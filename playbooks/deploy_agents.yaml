@@ -9,13 +9,11 @@
     agent_components:
       - name: alloy
         enabled: "{{ (monitoring_components_enabled | default({})).alloy | default(true) | bool }}"
-        install_method: "{{ (monitoring_component_install_methods | default({})).alloy | default('binary') }}"
         description: Grafana Alloy
-        binary_src: alloy
+        artifact_file: "{{ (monitoring_component_files | default({})).alloy | default('alloy.deb') }}"
         binary_dest: alloy
-        deb_src: "{{ (monitoring_component_deb_files | default({})).alloy | default('alloy.deb') }}"
         binary_exec_path: "{{ agent_install_dir }}/bin/alloy"
-        deb_exec_path: "{{ (monitoring_component_deb_exec_paths | default({})).alloy | default('/usr/bin/alloy') }}"
+        deb_exec_path: /usr/bin/alloy
         config_file: config.alloy
         data_dir: "{{ agent_data_dir }}/alloy"
         service_args: >-
@@ -87,14 +85,6 @@
         shell: /usr/sbin/nologin
         system: true
 
-    - name: Validate agent install methods
-      ansible.builtin.assert:
-        that:
-          - item.install_method in ['binary', 'deb']
-        fail_msg: "Unsupported install_method '{{ item.install_method }}' for {{ item.name }}. Use 'binary' or 'deb'."
-      loop: "{{ agent_components }}"
-      when: item.enabled | bool
-
     - name: Create agent base directories
       ansible.builtin.file:
         path: "{{ item }}"
@@ -120,7 +110,7 @@
 
     - name: Create agent package cache directory
       ansible.builtin.file:
-        path: "{{ monitoring_package_cache_dir | default('/tmp/monitoring-packages') }}"
+        path: /tmp/monitoring-packages
         state: directory
         owner: root
         group: root
@@ -128,7 +118,7 @@
 
     - name: Install agent binary artifacts
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../files/bin/{{ item.binary_src }}"
+        src: "{{ playbook_dir }}/../files/bin/{{ item.artifact_file }}"
         dest: "{{ agent_install_dir }}/bin/{{ item.binary_dest }}"
         owner: root
         group: root
@@ -136,29 +126,29 @@
       loop: "{{ agent_components }}"
       when:
         - item.enabled | bool
-        - item.install_method == 'binary'
+        - not (item.artifact_file | lower | regex_search('\\.deb$'))
       notify: Restart agent services
 
     - name: Stage agent deb artifacts
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../files/deb/{{ item.deb_src }}"
-        dest: "{{ monitoring_package_cache_dir | default('/tmp/monitoring-packages') }}/{{ item.deb_src }}"
+        src: "{{ playbook_dir }}/../files/deb/{{ item.artifact_file }}"
+        dest: "/tmp/monitoring-packages/{{ item.artifact_file }}"
         owner: root
         group: root
         mode: "0644"
       loop: "{{ agent_components }}"
       when:
         - item.enabled | bool
-        - item.install_method == 'deb'
+        - item.artifact_file | lower | regex_search('\\.deb$')
 
     - name: Install agent deb packages
       ansible.builtin.apt:
-        deb: "{{ monitoring_package_cache_dir | default('/tmp/monitoring-packages') }}/{{ item.deb_src }}"
+        deb: "/tmp/monitoring-packages/{{ item.artifact_file }}"
         policy_rc_d: 101
       loop: "{{ agent_components }}"
       when:
         - item.enabled | bool
-        - item.install_method == 'deb'
+        - item.artifact_file | lower | regex_search('\\.deb$')
       notify: Restart agent services
 
     - name: Write agent configs
@@ -186,7 +176,7 @@
           User={{ observability_user }}
           Group={{ observability_group }}
           WorkingDirectory={{ item.data_dir }}
-          ExecStart={{ item.deb_exec_path if item.install_method == 'deb' else item.binary_exec_path }} {{ item.service_args }}
+          ExecStart={{ item.deb_exec_path if (item.artifact_file | lower | regex_search('\.deb$')) else item.binary_exec_path }} {{ item.service_args }}
           Restart=on-failure
           RestartSec=5
           LimitNOFILE=65536

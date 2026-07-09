@@ -12,28 +12,12 @@ monitoring_components_enabled:
   alloy: true
   nginx: true
 
-monitoring_component_install_methods:
-  grafana: binary
-  loki: binary
-  tempo: deb
-  prometheus: binary
-  alloy: deb
-
-monitoring_component_deb_files:
-  grafana: grafana.deb
-  loki: loki.deb
+monitoring_component_files:
+  grafana: grafana-server
+  loki: loki
   tempo: tempo.deb
-  prometheus: prometheus.deb
+  prometheus: prometheus
   alloy: alloy.deb
-
-monitoring_component_deb_exec_paths:
-  grafana: /usr/sbin/grafana-server
-  loki: /usr/bin/loki
-  tempo: /usr/bin/tempo
-  prometheus: /usr/bin/prometheus
-  alloy: /usr/bin/alloy
-
-monitoring_package_cache_dir: /tmp/monitoring-packages
 
 lgtm_install_dir: /opt/lgtm
 lgtm_config_dir: /etc/lgtm
