@@ -1,0 +1,225 @@
+---
+- name: Deploy monitoring stack
+  hosts: "{{ target_hosts | default('all') }}"
+  become: true
+  gather_facts: true
+  vars_files:
+    - "../vars/common_{{ env | default('dev') }}.yaml"
+  vars:
+    lgtm_components:
+      - name: grafana
+        enabled: "{{ (monitoring_components_enabled | default({})).grafana | default(true) | bool }}"
+        description: Grafana
+        binary_src: grafana-server
+        binary_dest: grafana-server
+        config_file: grafana.ini
+        data_dir: "{{ lgtm_data_dir }}/grafana"
+        service_args: "--config={{ lgtm_config_dir }}/grafana.ini --homepath={{ grafana_home_dir }}"
+        config_content: |
+          [paths]
+          data = {{ lgtm_data_dir }}/grafana
+          logs = {{ lgtm_data_dir }}/grafana/logs
+          plugins = {{ lgtm_data_dir }}/grafana/plugins
+
+          [server]
+          http_addr = {{ lgtm_bind_address }}
+          http_port = {{ grafana_http_port }}
+
+      - name: loki
+        enabled: "{{ (monitoring_components_enabled | default({})).loki | default(true) | bool }}"
+        description: Loki
+        binary_src: loki
+        binary_dest: loki
+        config_file: loki.yaml
+        data_dir: "{{ lgtm_data_dir }}/loki"
+        service_args: "-config.file={{ lgtm_config_dir }}/loki.yaml"
+        config_content: |
+          auth_enabled: false
+
+          server:
+            http_listen_address: {{ lgtm_bind_address }}
+            http_listen_port: {{ loki_http_port }}
+
+          common:
+            path_prefix: {{ lgtm_data_dir }}/loki
+            replication_factor: 1
+            storage:
+              filesystem:
+                chunks_directory: {{ lgtm_data_dir }}/loki/chunks
+                rules_directory: {{ lgtm_data_dir }}/loki/rules
+
+          schema_config:
+            configs:
+              - from: "2024-01-01"
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index:
+                  prefix: index_
+                  period: 24h
+
+          limits_config:
+            allow_structured_metadata: true
+
+      - name: tempo
+        enabled: "{{ (monitoring_components_enabled | default({})).tempo | default(true) | bool }}"
+        description: Tempo
+        binary_src: tempo
+        binary_dest: tempo
+        config_file: tempo.yaml
+        data_dir: "{{ lgtm_data_dir }}/tempo"
+        service_args: "-config.file={{ lgtm_config_dir }}/tempo.yaml"
+        config_content: |
+          server:
+            http_listen_address: {{ lgtm_bind_address }}
+            http_listen_port: {{ tempo_http_port }}
+
+          distributor:
+            receivers:
+              otlp:
+                protocols:
+                  grpc: {}
+                  http: {}
+
+          storage:
+            trace:
+              backend: local
+              local:
+                path: {{ lgtm_data_dir }}/tempo/traces
+
+      - name: prometheus
+        enabled: "{{ (monitoring_components_enabled | default({})).prometheus | default(true) | bool }}"
+        description: Prometheus
+        binary_src: prometheus
+        binary_dest: prometheus
+        config_file: prometheus.yaml
+        data_dir: "{{ lgtm_data_dir }}/prometheus"
+        service_args: >-
+          --config.file={{ lgtm_config_dir }}/prometheus.yaml
+          --storage.tsdb.path={{ lgtm_data_dir }}/prometheus
+          --web.listen-address={{ lgtm_bind_address }}:{{ prometheus_http_port }}
+          --web.enable-remote-write-receiver
+        config_content: |
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+
+          scrape_configs:
+            - job_name: prometheus
+              static_configs:
+                - targets:
+                    - "localhost:{{ prometheus_http_port }}"
+
+  tasks:
+    - name: Ensure observability group exists
+      ansible.builtin.group:
+        name: "{{ observability_group }}"
+        system: true
+
+    - name: Ensure observability user exists
+      ansible.builtin.user:
+        name: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        create_home: false
+        shell: /usr/sbin/nologin
+        system: true
+
+    - name: Create monitoring base directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0755"
+      loop:
+        - "{{ lgtm_install_dir }}"
+        - "{{ lgtm_install_dir }}/bin"
+        - "{{ lgtm_config_dir }}"
+        - "{{ lgtm_data_dir }}"
+
+    - name: Create Grafana home directory
+      ansible.builtin.file:
+        path: "{{ grafana_home_dir }}"
+        state: directory
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0755"
+      when: (monitoring_components_enabled | default({})).grafana | default(true) | bool
+
+    - name: Create monitoring component data directories
+      ansible.builtin.file:
+        path: "{{ item.data_dir }}"
+        state: directory
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0755"
+      loop: "{{ lgtm_components }}"
+      when: item.enabled | bool
+
+    - name: Install monitoring binaries
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/bin/{{ item.binary_src }}"
+        dest: "{{ lgtm_install_dir }}/bin/{{ item.binary_dest }}"
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ lgtm_components }}"
+      when: item.enabled | bool
+      notify: Restart monitoring services
+
+    - name: Write monitoring configs
+      ansible.builtin.copy:
+        dest: "{{ lgtm_config_dir }}/{{ item.config_file }}"
+        content: "{{ item.config_content }}"
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0644"
+      loop: "{{ lgtm_components }}"
+      when: item.enabled | bool
+      notify: Restart monitoring services
+
+    - name: Install monitoring systemd units
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ item.name }}.service"
+        content: |
+          [Unit]
+          Description={{ item.description }}
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User={{ observability_user }}
+          Group={{ observability_group }}
+          WorkingDirectory={{ item.data_dir }}
+          ExecStart={{ lgtm_install_dir }}/bin/{{ item.binary_dest }} {{ item.service_args }}
+          Restart=on-failure
+          RestartSec=5
+          LimitNOFILE=65536
+
+          [Install]
+          WantedBy=multi-user.target
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ lgtm_components }}"
+      when: item.enabled | bool
+      notify: Restart monitoring services
+
+    - name: Enable and start monitoring services
+      ansible.builtin.systemd:
+        name: "{{ item.name }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      loop: "{{ lgtm_components }}"
+      when: item.enabled | bool
+
+  handlers:
+    - name: Restart monitoring services
+      ansible.builtin.systemd:
+        name: "{{ item.name }}"
+        state: restarted
+        daemon_reload: true
+      loop: "{{ lgtm_components }}"
+      when: item.enabled | bool

@@ -1,0 +1,159 @@
+---
+- name: Deploy observability agents
+  hosts: "{{ target_hosts | default('all') }}"
+  become: true
+  gather_facts: true
+  vars_files:
+    - "../vars/common_{{ env | default('dev') }}.yaml"
+  vars:
+    agent_components:
+      - name: alloy
+        enabled: "{{ (monitoring_components_enabled | default({})).alloy | default(true) | bool }}"
+        description: Grafana Alloy
+        binary_src: alloy
+        binary_dest: alloy
+        config_file: config.alloy
+        data_dir: "{{ agent_data_dir }}/alloy"
+        service_args: >-
+          run
+          --server.http.listen-addr={{ alloy_http_listen_address }}:{{ alloy_http_listen_port }}
+          --storage.path={{ agent_data_dir }}/alloy
+          {{ agent_config_dir }}/config.alloy
+        config_content: |
+          logging {
+            level = "info"
+          }
+
+          prometheus.exporter.unix "local" {
+          }
+
+          prometheus.scrape "local" {
+            targets    = prometheus.exporter.unix.local.targets
+            forward_to = [prometheus.remote_write.default.receiver]
+          }
+
+          prometheus.remote_write "default" {
+            endpoint {
+              url = "{{ prometheus_remote_write_url }}"
+            }
+          }
+
+          loki.write "default" {
+            endpoint {
+              url = "{{ loki_push_url }}"
+            }
+          }
+
+          otelcol.exporter.otlp "tempo" {
+            client {
+              endpoint = "{{ tempo_otlp_endpoint }}"
+              tls {
+                insecure = true
+              }
+            }
+          }
+
+  tasks:
+    - name: Ensure observability group exists
+      ansible.builtin.group:
+        name: "{{ observability_group }}"
+        system: true
+
+    - name: Ensure observability user exists
+      ansible.builtin.user:
+        name: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        create_home: false
+        shell: /usr/sbin/nologin
+        system: true
+
+    - name: Create agent base directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0755"
+      loop:
+        - "{{ agent_install_dir }}"
+        - "{{ agent_install_dir }}/bin"
+        - "{{ agent_config_dir }}"
+        - "{{ agent_data_dir }}"
+
+    - name: Create agent data directories
+      ansible.builtin.file:
+        path: "{{ item.data_dir }}"
+        state: directory
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0755"
+      loop: "{{ agent_components }}"
+      when: item.enabled | bool
+
+    - name: Install agent binaries
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/bin/{{ item.binary_src }}"
+        dest: "{{ agent_install_dir }}/bin/{{ item.binary_dest }}"
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ agent_components }}"
+      when: item.enabled | bool
+      notify: Restart agent services
+
+    - name: Write agent configs
+      ansible.builtin.copy:
+        dest: "{{ agent_config_dir }}/{{ item.config_file }}"
+        content: "{{ item.config_content }}"
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0644"
+      loop: "{{ agent_components }}"
+      when: item.enabled | bool
+      notify: Restart agent services
+
+    - name: Install agent systemd units
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ item.name }}.service"
+        content: |
+          [Unit]
+          Description={{ item.description }}
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User={{ observability_user }}
+          Group={{ observability_group }}
+          WorkingDirectory={{ item.data_dir }}
+          ExecStart={{ agent_install_dir }}/bin/{{ item.binary_dest }} {{ item.service_args }}
+          Restart=on-failure
+          RestartSec=5
+          LimitNOFILE=65536
+
+          [Install]
+          WantedBy=multi-user.target
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ agent_components }}"
+      when: item.enabled | bool
+      notify: Restart agent services
+
+    - name: Enable and start agent services
+      ansible.builtin.systemd:
+        name: "{{ item.name }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      loop: "{{ agent_components }}"
+      when: item.enabled | bool
+
+  handlers:
+    - name: Restart agent services
+      ansible.builtin.systemd:
+        name: "{{ item.name }}"
+        state: restarted
+        daemon_reload: true
+      loop: "{{ agent_components }}"
+      when: item.enabled | bool

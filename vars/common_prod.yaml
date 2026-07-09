@@ -1,0 +1,32 @@
+---
+env_name: prod
+
+observability_user: observability
+observability_group: observability
+
+monitoring_components_enabled:
+  grafana: true
+  loki: true
+  tempo: true
+  prometheus: true
+  alloy: true
+
+lgtm_install_dir: /opt/lgtm
+lgtm_config_dir: /etc/lgtm
+lgtm_data_dir: /var/lib/lgtm
+grafana_home_dir: /opt/lgtm/grafana
+lgtm_bind_address: "0.0.0.0"
+grafana_http_port: 3000
+loki_http_port: 3100
+tempo_http_port: 3200
+prometheus_http_port: 9090
+
+agent_install_dir: /opt/observability-agent
+agent_config_dir: /etc/observability-agent
+agent_data_dir: /var/lib/observability-agent
+alloy_http_listen_address: "0.0.0.0"
+alloy_http_listen_port: 12345
+
+loki_push_url: http://loki.prod.example.internal:3100/loki/api/v1/push
+prometheus_remote_write_url: http://prometheus.prod.example.internal:9090/api/v1/write
+tempo_otlp_endpoint: tempo.prod.example.internal:4317
