@@ -10,6 +10,7 @@ monitoring_components_enabled:
   tempo: true
   prometheus: true
   alloy: true
+  nginx: true
 
 lgtm_install_dir: /opt/lgtm
 lgtm_config_dir: /etc/lgtm
@@ -27,6 +28,26 @@ agent_data_dir: /var/lib/observability-agent
 alloy_http_listen_address: "0.0.0.0"
 alloy_http_listen_port: 12345
 
-loki_push_url: http://loki.prod.example.internal:3100/loki/api/v1/push
-prometheus_remote_write_url: http://prometheus.prod.example.internal:9090/api/v1/write
-tempo_otlp_endpoint: tempo.prod.example.internal:4317
+monitoring_gateway_host: monitoring-gateway.prod.example.internal
+monitoring_gateway_server_name: "{{ monitoring_gateway_host }}"
+monitoring_gateway_scheme: https
+monitoring_gateway_listen_port: 443
+monitoring_gateway_url: "{{ monitoring_gateway_scheme }}://{{ monitoring_gateway_host }}:{{ monitoring_gateway_listen_port }}"
+monitoring_gateway_tls_enabled: true
+monitoring_gateway_tls_server_name: "{{ monitoring_gateway_host }}"
+monitoring_gateway_tls_insecure_skip_verify: false
+
+nginx_config_dir: /etc/nginx/conf.d
+nginx_tls_dir: /etc/nginx/tls
+nginx_ssl_certificate: "{{ nginx_tls_dir }}/{{ monitoring_gateway_host }}.crt"
+nginx_ssl_certificate_key: "{{ nginx_tls_dir }}/{{ monitoring_gateway_host }}.key"
+nginx_generate_self_signed_cert: false
+nginx_self_signed_cert_days: 365
+nginx_client_max_body_size: 50m
+nginx_loki_upstream: "127.0.0.1:{{ loki_http_port }}"
+nginx_prometheus_upstream: "127.0.0.1:{{ prometheus_http_port }}"
+nginx_tempo_grpc_upstream: "127.0.0.1:4317"
+
+loki_push_url: "{{ monitoring_gateway_url }}/loki/api/v1/push"
+prometheus_remote_write_url: "{{ monitoring_gateway_url }}/prometheus/api/v1/write"
+tempo_otlp_endpoint: "{{ monitoring_gateway_host }}:{{ monitoring_gateway_listen_port }}"
