@@ -36,6 +36,9 @@ agent_config_dir: /etc/observability-agent
 agent_data_dir: /var/lib/observability-agent
 alloy_http_listen_address: "0.0.0.0"
 alloy_http_listen_port: 12345
+alloy_nginx_log_path: /var/log/nginx/*.log
+alloy_uvicorn_journal_match: "_COMM=uvicorn"
+alloy_journal_max_age: 1h
 
 monitoring_gateway_host: monitoring-gateway.prod.example.internal
 monitoring_gateway_server_name: "{{ monitoring_gateway_host }}"

@@ -58,6 +58,33 @@
             }
           }
 
+          loki.source.file "nginx" {
+            targets = [
+              {
+                __path__ = "{{ alloy_nginx_log_path }}",
+                service  = "nginx",
+                source   = "file",
+              },
+            ]
+            forward_to    = [loki.write.default.receiver]
+            tail_from_end = true
+
+            file_match {
+              enabled     = true
+              sync_period = "10s"
+            }
+          }
+
+          loki.source.journal "uvicorn" {
+            forward_to = [loki.write.default.receiver]
+            matches    = "{{ alloy_uvicorn_journal_match }}"
+            max_age    = "{{ alloy_journal_max_age }}"
+            labels     = {
+              service = "uvicorn",
+              source  = "journal",
+            }
+          }
+
           otelcol.exporter.otlp "tempo" {
             client {
               endpoint = "{{ tempo_otlp_endpoint }}"
@@ -84,6 +111,15 @@
         create_home: false
         shell: /usr/sbin/nologin
         system: true
+
+    - name: Allow observability user to read service logs
+      ansible.builtin.user:
+        name: "{{ observability_user }}"
+        groups:
+          - adm
+          - systemd-journal
+        append: true
+      notify: Restart agent services
 
     - name: Create agent base directories
       ansible.builtin.file:
