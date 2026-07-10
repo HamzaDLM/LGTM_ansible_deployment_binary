@@ -39,6 +39,9 @@ alloy_http_listen_port: 12345
 alloy_nginx_log_path: /var/log/nginx/*.log
 alloy_uvicorn_journal_match: "_COMM=uvicorn"
 alloy_journal_max_age: 1h
+alloy_journal_reader_full_access: false
+alloy_journal_reader_users:
+  - USERX
 
 monitoring_gateway_host: monitoring-gateway.prod.example.internal
 monitoring_gateway_server_name: "{{ monitoring_gateway_host }}"

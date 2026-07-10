@@ -75,3 +75,63 @@
              | list
              | join('\n') }}
           {{ monitoring_listening_ports.stderr | default('') }}
+
+    - name: Collect Alloy metrics
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ alloy_http_listen_port | default(12345) }}/metrics"
+        return_content: true
+      register: monitoring_alloy_metrics
+      failed_when: false
+      when: "'alloy' in monitoring_log_services"
+
+    - name: Print Alloy Loki pipeline metrics
+      ansible.builtin.debug:
+        msg: |
+          ===== Alloy Loki metrics =====
+          {{ monitoring_alloy_metrics.content
+             | default('')
+             | split('\n')
+             | select('match', '^(loki_source|loki_write)')
+             | list
+             | join('\n') }}
+      when: "'alloy' in monitoring_log_services"
+
+    - name: Check Alloy Nginx log files
+      ansible.builtin.shell: "ls -l {{ alloy_nginx_log_path | default('/var/log/nginx/*.log') }}"
+      register: monitoring_alloy_nginx_logs
+      changed_when: false
+      failed_when: false
+      when: "'alloy' in monitoring_log_services"
+
+    - name: Print Alloy Nginx log files
+      ansible.builtin.debug:
+        msg: |
+          ===== Alloy Nginx source files: {{ alloy_nginx_log_path | default('/var/log/nginx/*.log') }} =====
+          rc={{ monitoring_alloy_nginx_logs.rc }}
+          {{ monitoring_alloy_nginx_logs.stdout | default('') }}
+          {{ monitoring_alloy_nginx_logs.stderr | default('') }}
+      when: "'alloy' in monitoring_log_services"
+
+    - name: Check Alloy Uvicorn journal match
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - "{{ alloy_uvicorn_journal_match | default('_COMM=uvicorn') }}"
+          - -n
+          - "20"
+          - --no-pager
+          - --output
+          - short-iso
+      register: monitoring_alloy_uvicorn_logs
+      changed_when: false
+      failed_when: false
+      when: "'alloy' in monitoring_log_services"
+
+    - name: Print Alloy Uvicorn journal match
+      ansible.builtin.debug:
+        msg: |
+          ===== Alloy Uvicorn journal match: {{ alloy_uvicorn_journal_match | default('_COMM=uvicorn') }} =====
+          rc={{ monitoring_alloy_uvicorn_logs.rc }}
+          {{ monitoring_alloy_uvicorn_logs.stdout | default('') }}
+          {{ monitoring_alloy_uvicorn_logs.stderr | default('') }}
+      when: "'alloy' in monitoring_log_services"
