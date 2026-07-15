@@ -26,11 +26,31 @@
             level = "info"
           }
 
-          prometheus.exporter.unix "local" {
+          livedebugging {
+            enabled = {{ alloy_live_debugging_enabled | default(false) | bool | lower }}
           }
 
-          prometheus.scrape "local" {
-            targets    = prometheus.exporter.unix.local.targets
+          prometheus.exporter.unix "host" {
+            enable_collectors = [
+              "cpu",
+              "filesystem",
+              "diskstats",
+              "loadavg",
+              "meminfo",
+              "netdev",
+              "stat",
+              "time",
+              "uname",
+            ]
+
+            filesystem {
+              fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
+              mount_points_exclude = "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+)($|/)"
+            }
+          }
+
+          prometheus.scrape "host" {
+            targets    = prometheus.exporter.unix.host.targets
             forward_to = [prometheus.remote_write.default.receiver]
           }
 
@@ -75,13 +95,20 @@
             }
           }
 
-          loki.source.journal "uvicorn" {
-            forward_to = [loki.write.default.receiver]
-            matches    = "{{ alloy_uvicorn_journal_match }}"
-            max_age    = "{{ alloy_journal_max_age }}"
-            labels     = {
-              service = "uvicorn",
-              source  = "journal",
+          loki.source.file "app" {
+            targets = [
+              {
+                __path__ = "{{ alloy_app_log_path }}",
+                service  = "{{ alloy_app_log_service }}",
+                source   = "file",
+              },
+            ]
+            forward_to    = [loki.write.default.receiver]
+            tail_from_end = true
+
+            file_match {
+              enabled     = true
+              sync_period = "10s"
             }
           }
 

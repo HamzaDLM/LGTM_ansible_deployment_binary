@@ -112,26 +112,18 @@
           {{ monitoring_alloy_nginx_logs.stderr | default('') }}
       when: "'alloy' in monitoring_log_services"
 
-    - name: Check Alloy Uvicorn journal match
-      ansible.builtin.command:
-        argv:
-          - journalctl
-          - "{{ alloy_uvicorn_journal_match | default('_COMM=uvicorn') }}"
-          - -n
-          - "20"
-          - --no-pager
-          - --output
-          - short-iso
-      register: monitoring_alloy_uvicorn_logs
+    - name: Check Alloy app log files
+      ansible.builtin.shell: "ls -l {{ alloy_app_log_path | default('/var/log/projectsnamex/*.log') }}"
+      register: monitoring_alloy_app_logs
       changed_when: false
       failed_when: false
       when: "'alloy' in monitoring_log_services"
 
-    - name: Print Alloy Uvicorn journal match
+    - name: Print Alloy app log files
       ansible.builtin.debug:
         msg: |
-          ===== Alloy Uvicorn journal match: {{ alloy_uvicorn_journal_match | default('_COMM=uvicorn') }} =====
-          rc={{ monitoring_alloy_uvicorn_logs.rc }}
-          {{ monitoring_alloy_uvicorn_logs.stdout | default('') }}
-          {{ monitoring_alloy_uvicorn_logs.stderr | default('') }}
+          ===== Alloy app source files: {{ alloy_app_log_path | default('/var/log/projectsnamex/*.log') }} =====
+          rc={{ monitoring_alloy_app_logs.rc }}
+          {{ monitoring_alloy_app_logs.stdout | default('') }}
+          {{ monitoring_alloy_app_logs.stderr | default('') }}
       when: "'alloy' in monitoring_log_services"
