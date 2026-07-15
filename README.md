@@ -17,6 +17,7 @@ Minimal Ansible project for deploying a Grafana, Loki, Tempo, and Prometheus mon
 - Set artifact filenames under `monitoring_component_files`. Files ending in `.deb` are installed from `files/deb/`; every other file is copied from `files/bin/` as a raw binary.
 - Grafana should normally be installed from `grafana.deb`; a single `grafana-server` binary is not enough unless `grafana_home_dir` points to a full Grafana distribution with `conf/defaults.ini` and UI assets.
 - Grafana datasources are provisioned automatically for Prometheus, Loki, and Tempo under `/etc/lgtm/grafana/provisioning/datasources/monitoring.yaml`.
+- An importable Linux fleet dashboard is available at `files/grafana/dashboards/linux-fleet-overview.json`.
 - Alloy collects host metrics, tails Nginx logs from `alloy_nginx_log_path`, and tails application logs from `alloy_app_log_path` with the `alloy_app_log_service` label.
 - Alloy live debugging is enabled by default in dev/stg through `alloy_live_debugging_enabled`. Open `http://<agent-host>:12345` to inspect component state and live data flowing through pipelines.
 - Set `monitoring_gateway_host` to the DNS name agents should use for the Nginx gateway. The generated Alloy config sends Loki and Prometheus traffic to `https://<gateway>:443`, and sends Tempo OTLP gRPC to `<gateway>:443`.
@@ -37,6 +38,7 @@ Minimal Ansible project for deploying a Grafana, Loki, Tempo, and Prometheus mon
 ```text
 files/bin/                 Binary placeholders copied by the playbooks
 files/deb/                 Local Debian packages copied and installed by apt
+files/grafana/dashboards/  Importable Grafana dashboards
 playbooks/deploy_lgtm.yaml Server deployment
 playbooks/deploy_agents.yaml Agent deployment
 playbooks/deploy_nginx.yaml  Nginx gateway deployment
