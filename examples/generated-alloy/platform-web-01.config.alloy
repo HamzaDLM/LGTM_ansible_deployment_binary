@@ -1,0 +1,176 @@
+logging {
+  level = "info"
+}
+
+livedebugging {
+  enabled = true
+}
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = "https://monitoring-gateway.stg.example.internal:443/prometheus/api/v1/write"
+    tls_config {
+      server_name          = "monitoring-gateway.stg.example.internal"
+      insecure_skip_verify = true
+    }
+  }
+}
+
+prometheus.relabel "common" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  rule {
+    action       = "replace"
+    target_label = "instance"
+    replacement  = "platform-web-01"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "environment"
+    replacement  = "staging"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "project"
+    replacement  = "customer-portal"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "team"
+    replacement  = "network-platforms"
+  }
+}
+
+loki.write "default" {
+  endpoint {
+    url = "https://monitoring-gateway.stg.example.internal:443/loki/api/v1/push"
+    tls_config {
+      server_name          = "monitoring-gateway.stg.example.internal"
+      insecure_skip_verify = true
+    }
+  }
+}
+
+loki.relabel "common" {
+  forward_to = [loki.write.default.receiver]
+
+  rule {
+    action       = "replace"
+    target_label = "instance"
+    replacement  = "platform-web-01"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "environment"
+    replacement  = "staging"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "project"
+    replacement  = "customer-portal"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "team"
+    replacement  = "network-platforms"
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "monitoring-gateway.stg.example.internal:443"
+    tls {
+      insecure = false
+      server_name          = "monitoring-gateway.stg.example.internal"
+      insecure_skip_verify = true
+    }
+  }
+}
+
+
+prometheus.exporter.unix "host" {
+  enable_collectors = [
+    "cpu",
+    "filesystem",
+    "diskstats",
+    "loadavg",
+    "meminfo",
+    "netdev",
+    "stat",
+    "time",
+    "uname",
+  ]
+
+  filesystem {
+    fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
+    mount_points_exclude = "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+)($|/)"
+  }
+}
+
+prometheus.scrape "host" {
+  targets    = prometheus.exporter.unix.host.targets
+  forward_to = [prometheus.relabel.common.receiver]
+}
+
+loki.source.file "apache" {
+  targets = [
+    {
+      __path__    = "/var/log/apache2/access.log",
+      integration = "apache",
+      service     = "apache2",
+      log_type    = "access",
+      source      = "file",
+    },
+    {
+      __path__    = "/var/log/apache2/error.log",
+      integration = "apache",
+      service     = "apache2",
+      log_type    = "error",
+      source      = "file",
+    },
+  ]
+  forward_to    = [loki.relabel.common.receiver]
+  tail_from_end = true
+
+  file_match {
+    enabled     = true
+    sync_period = "10s"
+  }
+}
+
+prometheus.scrape "uvicorn" {
+  targets = [
+    {
+      __address__      = "127.0.0.1:9000",
+      __scheme__       = "http",
+      __metrics_path__ = "/internal/metrics",
+      integration      = "uvicorn",
+      service          = "customer-portal-api",
+    },
+  ]
+  forward_to = [prometheus.relabel.common.receiver]
+}
+
+loki.source.file "uvicorn" {
+  targets = [
+    {
+      __path__    = "/var/log/customer-portal/*.log",
+      integration = "uvicorn",
+      service     = "customer-portal-api",
+      source      = "file",
+    },
+  ]
+  forward_to    = [loki.relabel.common.receiver]
+  tail_from_end = true
+
+  file_match {
+    enabled     = true
+    sync_period = "10s"
+  }
+}

@@ -37,9 +37,6 @@ agent_data_dir: /var/lib/observability-agent
 alloy_http_listen_address: "0.0.0.0"
 alloy_http_listen_port: 12345
 alloy_live_debugging_enabled: true
-alloy_nginx_log_path: /var/log/nginx/*.log
-alloy_app_log_path: /var/log/projectsnamex/*.log
-alloy_app_log_service: projectsnamex
 alloy_journal_reader_full_access: true
 alloy_journal_reader_users:
   - USERX

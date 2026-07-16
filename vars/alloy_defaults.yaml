@@ -1,0 +1,52 @@
+---
+alloy_supported_integrations:
+  - host
+  - nginx
+  - apache
+  - redis
+  - uvicorn
+
+alloy_default_enabled_integrations:
+  - host
+
+alloy_default_project: networking
+alloy_default_team: network-operations
+
+alloy_log_file_sync_period: 10s
+alloy_tail_from_end: true
+
+alloy_host_defaults:
+  enable_collectors:
+    - cpu
+    - filesystem
+    - diskstats
+    - loadavg
+    - meminfo
+    - netdev
+    - stat
+    - time
+    - uname
+  filesystem:
+    fs_types_exclude: "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
+    mount_points_exclude: "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+)($|/)"
+
+alloy_integration_required_options:
+  nginx:
+    config_var: alloy_nginx
+    required_options:
+      - name: access_log
+      - name: error_log
+  apache:
+    config_var: alloy_apache
+    required_options:
+      - name: access_log
+      - name: error_log
+  redis:
+    config_var: alloy_redis
+    required_options:
+      - name: address
+  uvicorn:
+    config_var: alloy_uvicorn
+    required_options:
+      - name: metrics_url
+        pattern: "^https?://[^/]+(/.*)?$"

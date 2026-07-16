@@ -4,10 +4,28 @@
   become: true
   gather_facts: false
   vars_files:
+    - "../vars/alloy_defaults.yaml"
     - "../vars/common_{{ env | default('dev') }}.yaml"
   vars:
     monitoring_log_lines: "{{ log_lines | default(120) }}"
     monitoring_log_services: "{{ services | default(['grafana', 'loki', 'tempo', 'prometheus', 'alloy', 'nginx']) }}"
+    monitoring_alloy_enabled_integrations: "{{ alloy_enabled_integrations | default(alloy_default_enabled_integrations) }}"
+    monitoring_alloy_log_sources:
+      - name: nginx access
+        integration: nginx
+        path: "{{ (alloy_nginx | default({})).access_log | default('') }}"
+      - name: nginx error
+        integration: nginx
+        path: "{{ (alloy_nginx | default({})).error_log | default('') }}"
+      - name: apache access
+        integration: apache
+        path: "{{ (alloy_apache | default({})).access_log | default('') }}"
+      - name: apache error
+        integration: apache
+        path: "{{ (alloy_apache | default({})).error_log | default('') }}"
+      - name: uvicorn
+        integration: uvicorn
+        path: "{{ (alloy_uvicorn | default({})).log_path | default('') }}"
 
   tasks:
     - name: Collect service status
@@ -96,34 +114,25 @@
              | join('\n') }}
       when: "'alloy' in monitoring_log_services"
 
-    - name: Check Alloy Nginx log files
-      ansible.builtin.shell: "ls -l {{ alloy_nginx_log_path | default('/var/log/nginx/*.log') }}"
-      register: monitoring_alloy_nginx_logs
+    - name: Check configured Alloy log files
+      ansible.builtin.shell: "ls -l {{ item.path }}"
+      loop: "{{ monitoring_alloy_log_sources }}"
+      register: monitoring_alloy_log_files
       changed_when: false
       failed_when: false
-      when: "'alloy' in monitoring_log_services"
+      when:
+        - "'alloy' in monitoring_log_services"
+        - item.integration in monitoring_alloy_enabled_integrations
+        - item.path | length > 0
 
-    - name: Print Alloy Nginx log files
+    - name: Print configured Alloy log files
       ansible.builtin.debug:
         msg: |
-          ===== Alloy Nginx source files: {{ alloy_nginx_log_path | default('/var/log/nginx/*.log') }} =====
-          rc={{ monitoring_alloy_nginx_logs.rc }}
-          {{ monitoring_alloy_nginx_logs.stdout | default('') }}
-          {{ monitoring_alloy_nginx_logs.stderr | default('') }}
-      when: "'alloy' in monitoring_log_services"
-
-    - name: Check Alloy app log files
-      ansible.builtin.shell: "ls -l {{ alloy_app_log_path | default('/var/log/projectsnamex/*.log') }}"
-      register: monitoring_alloy_app_logs
-      changed_when: false
-      failed_when: false
-      when: "'alloy' in monitoring_log_services"
-
-    - name: Print Alloy app log files
-      ansible.builtin.debug:
-        msg: |
-          ===== Alloy app source files: {{ alloy_app_log_path | default('/var/log/projectsnamex/*.log') }} =====
-          rc={{ monitoring_alloy_app_logs.rc }}
-          {{ monitoring_alloy_app_logs.stdout | default('') }}
-          {{ monitoring_alloy_app_logs.stderr | default('') }}
-      when: "'alloy' in monitoring_log_services"
+          ===== Alloy {{ item.item.name }} source files: {{ item.item.path }} =====
+          rc={{ item.rc }}
+          {{ item.stdout | default('') }}
+          {{ item.stderr | default('') }}
+      loop: "{{ monitoring_alloy_log_files.results | default([]) }}"
+      when:
+        - "'alloy' in monitoring_log_services"
+        - item.skipped is not defined or not item.skipped

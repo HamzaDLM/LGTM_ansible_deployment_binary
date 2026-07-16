@@ -1,0 +1,18 @@
+{% set enabled_integrations = alloy_effective_enabled_integrations | default(alloy_enabled_integrations | default(alloy_default_enabled_integrations | default(['host']))) %}
+logging {
+  level = "info"
+}
+
+livedebugging {
+  enabled = {{ alloy_live_debugging_enabled | default(false) | bool | lower }}
+}
+
+{% include "common.alloy.j2" %}
+{{ "\n" }}
+
+{% for integration in enabled_integrations %}
+{% include "integrations/" ~ integration ~ ".alloy.j2" %}
+{% if not loop.last %}
+{{ "\n" }}
+{% endif %}
+{% endfor %}

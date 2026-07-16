@@ -4,8 +4,18 @@
   become: true
   gather_facts: true
   vars_files:
+    - "../vars/alloy_defaults.yaml"
     - "../vars/common_{{ env | default('dev') }}.yaml"
   vars:
+    alloy_effective_enabled_integrations: "{{ alloy_enabled_integrations | default(alloy_default_enabled_integrations) }}"
+    alloy_unknown_integrations: "{{ alloy_effective_enabled_integrations | difference(alloy_supported_integrations) }}"
+    alloy_enabled_validation_specs: >-
+      {{
+        alloy_integration_required_options
+        | dict2items
+        | selectattr('key', 'in', alloy_effective_enabled_integrations)
+        | list
+      }}
     agent_components:
       - name: alloy
         enabled: "{{ (monitoring_components_enabled | default({})).alloy | default(true) | bool }}"
@@ -15,7 +25,7 @@
         binary_exec_path: "{{ agent_install_dir }}/bin/alloy"
         deb_exec_path: /usr/bin/alloy
         config_file: config.alloy
-        config_template: config.alloy.j2
+        config_template: alloy/templates/config.alloy.j2
         data_dir: "{{ agent_data_dir }}/alloy"
         service_args: >-
           run
@@ -24,6 +34,62 @@
           {{ agent_config_dir }}/config.alloy
 
   tasks:
+    - name: Validate Alloy enabled integrations list
+      ansible.builtin.assert:
+        that:
+          - alloy_effective_enabled_integrations is not string
+          - alloy_effective_enabled_integrations is sequence
+          - alloy_effective_enabled_integrations | length > 0
+          - alloy_effective_enabled_integrations | length == alloy_effective_enabled_integrations | unique | length
+        fail_msg: >-
+          alloy_enabled_integrations must be a non-empty list without duplicate
+          values for host {{ inventory_hostname }}.
+      when: (monitoring_components_enabled | default({})).alloy | default(true) | bool
+
+    - name: Validate Alloy enabled integrations are supported
+      ansible.builtin.assert:
+        that:
+          - alloy_unknown_integrations | length == 0
+        fail_msg: >-
+          Unsupported Alloy integration(s) for host {{ inventory_hostname }}:
+          {{ alloy_unknown_integrations | join(', ') }}. Supported integrations:
+          {{ alloy_supported_integrations | join(', ') }}.
+      when: (monitoring_components_enabled | default({})).alloy | default(true) | bool
+
+    - name: Check enabled Alloy integration templates exist
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/../configs/alloy/templates/integrations/{{ item }}.alloy.j2"
+      delegate_to: localhost
+      become: false
+      loop: "{{ alloy_effective_enabled_integrations }}"
+      register: alloy_integration_template_files
+      when: (monitoring_components_enabled | default({})).alloy | default(true) | bool
+
+    - name: Validate enabled Alloy integration templates exist
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+        fail_msg: >-
+          Alloy integration '{{ item.item }}' is enabled for host
+          {{ inventory_hostname }}, but configs/alloy/templates/integrations/{{ item.item }}.alloy.j2
+          does not exist in the Ansible project.
+      loop: "{{ alloy_integration_template_files.results }}"
+      when: (monitoring_components_enabled | default({})).alloy | default(true) | bool
+
+    - name: Validate required Alloy integration options
+      ansible.builtin.assert:
+        that:
+          - alloy_required_option_value | length > 0
+          - item.1.pattern is not defined or alloy_required_option_value | regex_search(item.1.pattern)
+        fail_msg: >-
+          Alloy integration '{{ item.0.key }}' requires
+          '{{ item.0.value.config_var }}.{{ item.1.name }}' to be defined{% if item.1.pattern is defined %}
+          and match '{{ item.1.pattern }}'{% endif %} for host {{ inventory_hostname }}.
+      vars:
+        alloy_required_option_value: "{{ (vars[item.0.value.config_var] | default({})).get(item.1.name, '') | string }}"
+      loop: "{{ query('ansible.builtin.subelements', alloy_enabled_validation_specs, 'value.required_options', {'skip_missing': true}) }}"
+      when: (monitoring_components_enabled | default({})).alloy | default(true) | bool
+
     - name: Ensure observability group exists
       ansible.builtin.group:
         name: "{{ observability_group }}"

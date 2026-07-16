@@ -1,0 +1,96 @@
+{% set alloy_label_instance = alloy_instance | default(inventory_hostname) %}
+{% set alloy_label_environment = alloy_environment | default(env_name | default('unknown')) %}
+{% set alloy_label_project = alloy_project | default(alloy_default_project | default('unknown')) %}
+{% set alloy_label_team = alloy_team | default(alloy_default_team | default('unknown')) %}
+prometheus.remote_write "default" {
+  endpoint {
+    url = {{ prometheus_remote_write_url | to_json }}
+{% if monitoring_gateway_scheme | default('http') == 'https' %}
+    tls_config {
+      server_name          = {{ monitoring_gateway_tls_server_name | to_json }}
+      insecure_skip_verify = {{ monitoring_gateway_tls_insecure_skip_verify | bool | lower }}
+    }
+{% endif %}
+  }
+}
+
+prometheus.relabel "common" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  rule {
+    action       = "replace"
+    target_label = "instance"
+    replacement  = {{ alloy_label_instance | to_json }}
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "environment"
+    replacement  = {{ alloy_label_environment | to_json }}
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "project"
+    replacement  = {{ alloy_label_project | to_json }}
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "team"
+    replacement  = {{ alloy_label_team | to_json }}
+  }
+}
+
+loki.write "default" {
+  endpoint {
+    url = {{ loki_push_url | to_json }}
+{% if monitoring_gateway_scheme | default('http') == 'https' %}
+    tls_config {
+      server_name          = {{ monitoring_gateway_tls_server_name | to_json }}
+      insecure_skip_verify = {{ monitoring_gateway_tls_insecure_skip_verify | bool | lower }}
+    }
+{% endif %}
+  }
+}
+
+loki.relabel "common" {
+  forward_to = [loki.write.default.receiver]
+
+  rule {
+    action       = "replace"
+    target_label = "instance"
+    replacement  = {{ alloy_label_instance | to_json }}
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "environment"
+    replacement  = {{ alloy_label_environment | to_json }}
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "project"
+    replacement  = {{ alloy_label_project | to_json }}
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "team"
+    replacement  = {{ alloy_label_team | to_json }}
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = {{ tempo_otlp_endpoint | to_json }}
+    tls {
+      insecure = {{ (monitoring_gateway_scheme | default('http') != 'https') | bool | lower }}
+{% if monitoring_gateway_scheme | default('http') == 'https' %}
+      server_name          = {{ monitoring_gateway_tls_server_name | to_json }}
+      insecure_skip_verify = {{ monitoring_gateway_tls_insecure_skip_verify | bool | lower }}
+{% endif %}
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{% set uvicorn_metrics_url = alloy_uvicorn.metrics_url %}
+{% set uvicorn_metrics_scheme = uvicorn_metrics_url | regex_replace('^([a-zA-Z][a-zA-Z0-9+.-]*)://.*$', '\\1') %}
+{% set uvicorn_metrics_without_scheme = uvicorn_metrics_url | regex_replace('^[a-zA-Z][a-zA-Z0-9+.-]*://', '') %}
+{% set uvicorn_metrics_address = uvicorn_metrics_without_scheme | regex_replace('/.*$', '') %}
+{% set uvicorn_metrics_path = uvicorn_metrics_without_scheme | regex_replace('^[^/]*', '') %}
+prometheus.scrape "uvicorn" {
+  targets = [
+    {
+      __address__      = {{ uvicorn_metrics_address | to_json }},
+      __scheme__       = {{ uvicorn_metrics_scheme | to_json }},
+      __metrics_path__ = {{ (uvicorn_metrics_path if uvicorn_metrics_path | length > 0 else '/metrics') | to_json }},
+      integration      = "uvicorn",
+      service          = {{ alloy_uvicorn.service | default('uvicorn') | to_json }},
+    },
+  ]
+  forward_to = [prometheus.relabel.common.receiver]
+}
+
+{% if alloy_uvicorn.log_path is defined %}
+loki.source.file "uvicorn" {
+  targets = [
+    {
+      __path__    = {{ alloy_uvicorn.log_path | to_json }},
+      integration = "uvicorn",
+      service     = {{ alloy_uvicorn.service | default('uvicorn') | to_json }},
+      source      = "file",
+    },
+  ]
+  forward_to    = [loki.relabel.common.receiver]
+  tail_from_end = {{ alloy_uvicorn.tail_from_end | default(alloy_tail_from_end) | bool | lower }}
+
+  file_match {
+    enabled     = true
+    sync_period = {{ alloy_uvicorn.sync_period | default(alloy_log_file_sync_period) | to_json }}
+  }
+}
+{% endif %}

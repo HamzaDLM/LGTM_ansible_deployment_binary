@@ -1,0 +1,25 @@
+loki.source.file "nginx" {
+  targets = [
+    {
+      __path__    = {{ alloy_nginx.access_log | to_json }},
+      integration = "nginx",
+      service     = {{ alloy_nginx.service | default('nginx') | to_json }},
+      log_type    = "access",
+      source      = "file",
+    },
+    {
+      __path__    = {{ alloy_nginx.error_log | to_json }},
+      integration = "nginx",
+      service     = {{ alloy_nginx.service | default('nginx') | to_json }},
+      log_type    = "error",
+      source      = "file",
+    },
+  ]
+  forward_to    = [loki.relabel.common.receiver]
+  tail_from_end = {{ alloy_nginx.tail_from_end | default(alloy_tail_from_end) | bool | lower }}
+
+  file_match {
+    enabled     = true
+    sync_period = {{ alloy_nginx.sync_period | default(alloy_log_file_sync_period) | to_json }}
+  }
+}

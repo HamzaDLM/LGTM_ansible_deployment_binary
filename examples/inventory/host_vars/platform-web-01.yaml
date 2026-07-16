@@ -1,0 +1,20 @@
+---
+alloy_environment: staging
+alloy_project: customer-portal
+alloy_team: network-platforms
+alloy_instance: platform-web-01
+
+alloy_enabled_integrations:
+  - host
+  - apache
+  - uvicorn
+
+alloy_apache:
+  access_log: /var/log/apache2/access.log
+  error_log: /var/log/apache2/error.log
+  service: apache2
+
+alloy_uvicorn:
+  metrics_url: http://127.0.0.1:9000/internal/metrics
+  log_path: /var/log/customer-portal/*.log
+  service: customer-portal-api

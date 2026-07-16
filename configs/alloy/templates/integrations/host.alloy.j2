@@ -1,0 +1,18 @@
+{% set host_config = alloy_host_defaults | combine(alloy_host | default({}), recursive=True) %}
+prometheus.exporter.unix "host" {
+  enable_collectors = [
+{% for collector in host_config.enable_collectors %}
+    {{ collector | to_json }},
+{% endfor %}
+  ]
+
+  filesystem {
+    fs_types_exclude     = {{ host_config.filesystem.fs_types_exclude | to_json }}
+    mount_points_exclude = {{ host_config.filesystem.mount_points_exclude | to_json }}
+  }
+}
+
+prometheus.scrape "host" {
+  targets    = prometheus.exporter.unix.host.targets
+  forward_to = [prometheus.relabel.common.receiver]
+}

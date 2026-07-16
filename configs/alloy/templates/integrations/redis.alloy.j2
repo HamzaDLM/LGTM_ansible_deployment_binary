@@ -1,0 +1,20 @@
+prometheus.exporter.redis "redis" {
+  redis_addr = {{ alloy_redis.address | to_json }}
+{% if alloy_redis.namespace is defined %}
+  namespace = {{ alloy_redis.namespace | to_json }}
+{% endif %}
+{% if alloy_redis.redis_user is defined %}
+  redis_user = {{ alloy_redis.redis_user | to_json }}
+{% endif %}
+{% if alloy_redis.redis_password_file is defined %}
+  redis_password_file = {{ alloy_redis.redis_password_file | to_json }}
+{% endif %}
+{% if alloy_redis.skip_tls_verification is defined %}
+  skip_tls_verification = {{ alloy_redis.skip_tls_verification | bool | lower }}
+{% endif %}
+}
+
+prometheus.scrape "redis" {
+  targets    = prometheus.exporter.redis.redis.targets
+  forward_to = [prometheus.relabel.common.receiver]
+}

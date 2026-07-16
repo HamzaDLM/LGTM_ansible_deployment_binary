@@ -1,0 +1,23 @@
+---
+alloy_environment: production
+alloy_project: payments
+alloy_team: network-apps
+alloy_instance: payments-api-01
+
+alloy_enabled_integrations:
+  - host
+  - nginx
+  - uvicorn
+  - redis
+
+alloy_nginx:
+  access_log: /var/log/nginx/payments.access.log
+  error_log: /var/log/nginx/payments.error.log
+
+alloy_uvicorn:
+  metrics_url: http://127.0.0.1:8000/metrics
+  log_path: /var/log/payments-api/*.log
+  service: payments-api
+
+alloy_redis:
+  address: redis://127.0.0.1:6379

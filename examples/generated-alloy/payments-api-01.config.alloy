@@ -1,0 +1,186 @@
+logging {
+  level = "info"
+}
+
+livedebugging {
+  enabled = false
+}
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = "https://monitoring-gateway.prod.example.internal:443/prometheus/api/v1/write"
+    tls_config {
+      server_name          = "monitoring-gateway.prod.example.internal"
+      insecure_skip_verify = false
+    }
+  }
+}
+
+prometheus.relabel "common" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  rule {
+    action       = "replace"
+    target_label = "instance"
+    replacement  = "payments-api-01"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "environment"
+    replacement  = "production"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "project"
+    replacement  = "payments"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "team"
+    replacement  = "network-apps"
+  }
+}
+
+loki.write "default" {
+  endpoint {
+    url = "https://monitoring-gateway.prod.example.internal:443/loki/api/v1/push"
+    tls_config {
+      server_name          = "monitoring-gateway.prod.example.internal"
+      insecure_skip_verify = false
+    }
+  }
+}
+
+loki.relabel "common" {
+  forward_to = [loki.write.default.receiver]
+
+  rule {
+    action       = "replace"
+    target_label = "instance"
+    replacement  = "payments-api-01"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "environment"
+    replacement  = "production"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "project"
+    replacement  = "payments"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "team"
+    replacement  = "network-apps"
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "monitoring-gateway.prod.example.internal:443"
+    tls {
+      insecure = false
+      server_name          = "monitoring-gateway.prod.example.internal"
+      insecure_skip_verify = false
+    }
+  }
+}
+
+
+prometheus.exporter.unix "host" {
+  enable_collectors = [
+    "cpu",
+    "filesystem",
+    "diskstats",
+    "loadavg",
+    "meminfo",
+    "netdev",
+    "stat",
+    "time",
+    "uname",
+  ]
+
+  filesystem {
+    fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
+    mount_points_exclude = "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+)($|/)"
+  }
+}
+
+prometheus.scrape "host" {
+  targets    = prometheus.exporter.unix.host.targets
+  forward_to = [prometheus.relabel.common.receiver]
+}
+
+loki.source.file "nginx" {
+  targets = [
+    {
+      __path__    = "/var/log/nginx/payments.access.log",
+      integration = "nginx",
+      service     = "nginx",
+      log_type    = "access",
+      source      = "file",
+    },
+    {
+      __path__    = "/var/log/nginx/payments.error.log",
+      integration = "nginx",
+      service     = "nginx",
+      log_type    = "error",
+      source      = "file",
+    },
+  ]
+  forward_to    = [loki.relabel.common.receiver]
+  tail_from_end = true
+
+  file_match {
+    enabled     = true
+    sync_period = "10s"
+  }
+}
+
+prometheus.scrape "uvicorn" {
+  targets = [
+    {
+      __address__      = "127.0.0.1:8000",
+      __scheme__       = "http",
+      __metrics_path__ = "/metrics",
+      integration      = "uvicorn",
+      service          = "payments-api",
+    },
+  ]
+  forward_to = [prometheus.relabel.common.receiver]
+}
+
+loki.source.file "uvicorn" {
+  targets = [
+    {
+      __path__    = "/var/log/payments-api/*.log",
+      integration = "uvicorn",
+      service     = "payments-api",
+      source      = "file",
+    },
+  ]
+  forward_to    = [loki.relabel.common.receiver]
+  tail_from_end = true
+
+  file_match {
+    enabled     = true
+    sync_period = "10s"
+  }
+}
+
+
+prometheus.exporter.redis "redis" {
+  redis_addr = "redis://127.0.0.1:6379"
+}
+
+prometheus.scrape "redis" {
+  targets    = prometheus.exporter.redis.redis.targets
+  forward_to = [prometheus.relabel.common.receiver]
+}
