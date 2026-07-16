@@ -1,0 +1,12 @@
+{% if alloy_journal_reader_full_access | default(false) | bool %}
+Cmnd_Alias JOURNAL_READ = /usr/bin/journalctl, /usr/bin/journalctl *
+{% else %}
+Cmnd_Alias ALLOY_JOURNAL = /usr/bin/journalctl -u alloy.service, /usr/bin/journalctl -u alloy.service *, /usr/bin/journalctl --unit alloy.service, /usr/bin/journalctl --unit alloy.service *
+{% endif %}
+{% for user in alloy_journal_reader_users | default([]) %}
+{% if alloy_journal_reader_full_access | default(false) | bool %}
+{{ user }} ALL=(root) NOPASSWD: JOURNAL_READ
+{% else %}
+{{ user }} ALL=(root) NOPASSWD: ALLOY_JOURNAL
+{% endif %}
+{% endfor %}

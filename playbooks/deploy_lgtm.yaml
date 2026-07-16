@@ -15,19 +15,10 @@
         binary_exec_path: "{{ lgtm_install_dir }}/bin/grafana-server"
         deb_exec_path: /usr/share/grafana/bin/grafana
         config_file: grafana.ini
+        config_template: grafana.ini.j2
         data_dir: "{{ lgtm_data_dir }}/grafana"
         service_args: "--config={{ lgtm_config_dir }}/grafana.ini --homepath={{ grafana_home_dir }}"
         deb_service_args: "server --config={{ lgtm_config_dir }}/grafana.ini --homepath=/usr/share/grafana"
-        config_content: |
-          [paths]
-          data = {{ lgtm_data_dir }}/grafana
-          logs = {{ lgtm_data_dir }}/grafana/logs
-          plugins = {{ lgtm_data_dir }}/grafana/plugins
-          provisioning = {{ lgtm_config_dir }}/grafana/provisioning
-
-          [server]
-          http_addr = {{ lgtm_bind_address }}
-          http_port = {{ grafana_http_port }}
 
       - name: loki
         enabled: "{{ (monitoring_components_enabled | default({})).loki | default(true) | bool }}"
@@ -37,41 +28,9 @@
         binary_exec_path: "{{ lgtm_install_dir }}/bin/loki"
         deb_exec_path: /usr/bin/loki
         config_file: loki.yaml
+        config_template: loki.yaml.j2
         data_dir: "{{ lgtm_data_dir }}/loki"
         service_args: "-config.file={{ lgtm_config_dir }}/loki.yaml"
-        config_content: |
-          auth_enabled: false
-
-          server:
-            http_listen_address: {{ lgtm_bind_address }}
-            http_listen_port: {{ loki_http_port }}
-            grpc_listen_address: {{ lgtm_bind_address }}
-            grpc_listen_port: {{ loki_grpc_port | default(9096) }}
-
-          common:
-            ring:
-              instance_addr: 127.0.0.1
-              kvstore:
-                store: inmemory
-            path_prefix: {{ lgtm_data_dir }}/loki
-            replication_factor: 1
-
-          schema_config:
-            configs:
-              - from: "2024-01-01"
-                store: tsdb
-                object_store: filesystem
-                schema: v13
-                index:
-                  prefix: index_
-                  period: 24h
-
-          limits_config:
-            allow_structured_metadata: true
-
-          storage_config:
-            filesystem:
-              directory: {{ lgtm_data_dir }}/loki/chunks
 
       - name: tempo
         enabled: "{{ (monitoring_components_enabled | default({})).tempo | default(true) | bool }}"
@@ -81,33 +40,9 @@
         binary_exec_path: "{{ lgtm_install_dir }}/bin/tempo"
         deb_exec_path: /usr/bin/tempo
         config_file: tempo.yaml
+        config_template: tempo.yaml.j2
         data_dir: "{{ lgtm_data_dir }}/tempo"
         service_args: "-config.file={{ lgtm_config_dir }}/tempo.yaml"
-        config_content: |
-          target: all
-
-          server:
-            http_listen_address: {{ lgtm_bind_address }}
-            http_listen_port: {{ tempo_http_port }}
-            grpc_listen_address: {{ lgtm_bind_address }}
-            grpc_listen_port: {{ tempo_grpc_port | default(9097) }}
-
-          distributor:
-            receivers:
-              otlp:
-                protocols:
-                  grpc:
-                    endpoint: {{ lgtm_bind_address }}:4317
-                  http:
-                    endpoint: {{ lgtm_bind_address }}:4318
-
-          storage:
-            trace:
-              backend: local
-              wal:
-                path: {{ lgtm_data_dir }}/tempo/wal
-              local:
-                path: {{ lgtm_data_dir }}/tempo/blocks
 
       - name: prometheus
         enabled: "{{ (monitoring_components_enabled | default({})).prometheus | default(true) | bool }}"
@@ -117,22 +52,13 @@
         binary_exec_path: "{{ lgtm_install_dir }}/bin/prometheus"
         deb_exec_path: /usr/bin/prometheus
         config_file: prometheus.yaml
+        config_template: prometheus.yaml.j2
         data_dir: "{{ lgtm_data_dir }}/prometheus"
         service_args: >-
           --config.file={{ lgtm_config_dir }}/prometheus.yaml
           --storage.tsdb.path={{ lgtm_data_dir }}/prometheus
           --web.listen-address={{ lgtm_bind_address }}:{{ prometheus_http_port }}
           --web.enable-remote-write-receiver
-        config_content: |
-          global:
-            scrape_interval: 15s
-            evaluation_interval: 15s
-
-          scrape_configs:
-            - job_name: prometheus
-              static_configs:
-                - targets:
-                    - "localhost:{{ prometheus_http_port }}"
 
   tasks:
     - name: Ensure observability group exists
@@ -186,41 +112,12 @@
         - not ((monitoring_component_files | default({})).grafana | default('grafana.deb') | lower | regex_search('\\.deb$'))
 
     - name: Provision Grafana datasources
-      ansible.builtin.copy:
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../configs/grafana-datasources.yaml.j2"
         dest: "{{ lgtm_config_dir }}/grafana/provisioning/datasources/monitoring.yaml"
         owner: "{{ observability_user }}"
         group: "{{ observability_group }}"
         mode: "0644"
-        content: |
-          apiVersion: 1
-
-          datasources:
-            - name: Prometheus
-              uid: prometheus
-              type: prometheus
-              access: proxy
-              url: http://127.0.0.1:{{ prometheus_http_port }}
-              isDefault: true
-              editable: true
-
-            - name: Loki
-              uid: loki
-              type: loki
-              access: proxy
-              url: http://127.0.0.1:{{ loki_http_port }}
-              editable: true
-
-            - name: Tempo
-              uid: tempo
-              type: tempo
-              access: proxy
-              url: http://127.0.0.1:{{ tempo_http_port }}
-              editable: true
-              jsonData:
-                tracesToLogsV2:
-                  datasourceUid: loki
-                tracesToMetrics:
-                  datasourceUid: prometheus
       when: (monitoring_components_enabled | default({})).grafana | default(true) | bool
       notify: Restart monitoring services
 
@@ -278,9 +175,9 @@
       notify: Restart monitoring services
 
     - name: Write monitoring configs
-      ansible.builtin.copy:
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../configs/{{ item.config_template }}"
         dest: "{{ lgtm_config_dir }}/{{ item.config_file }}"
-        content: "{{ item.config_content }}"
         owner: "{{ observability_user }}"
         group: "{{ observability_group }}"
         mode: "0644"
@@ -289,26 +186,9 @@
       notify: Restart monitoring services
 
     - name: Install monitoring systemd units
-      ansible.builtin.copy:
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../configs/monitoring-component.service.j2"
         dest: "/etc/systemd/system/{{ item.name }}.service"
-        content: |
-          [Unit]
-          Description={{ item.description }}
-          After=network-online.target
-          Wants=network-online.target
-
-          [Service]
-          Type=simple
-          User={{ observability_user }}
-          Group={{ observability_group }}
-          WorkingDirectory={{ item.data_dir }}
-          ExecStart={{ item.deb_exec_path if (item.artifact_file | lower | regex_search('\.deb$')) else item.binary_exec_path }} {{ item.deb_service_args | default(item.service_args) if (item.artifact_file | lower | regex_search('\.deb$')) else item.service_args }}
-          Restart=on-failure
-          RestartSec=5
-          LimitNOFILE=65536
-
-          [Install]
-          WantedBy=multi-user.target
         owner: root
         group: root
         mode: "0644"

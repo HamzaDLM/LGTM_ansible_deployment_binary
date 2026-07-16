@@ -15,115 +15,13 @@
         binary_exec_path: "{{ agent_install_dir }}/bin/alloy"
         deb_exec_path: /usr/bin/alloy
         config_file: config.alloy
+        config_template: config.alloy.j2
         data_dir: "{{ agent_data_dir }}/alloy"
         service_args: >-
           run
           --server.http.listen-addr={{ alloy_http_listen_address }}:{{ alloy_http_listen_port }}
           --storage.path={{ agent_data_dir }}/alloy
           {{ agent_config_dir }}/config.alloy
-        config_content: |
-          logging {
-            level = "info"
-          }
-
-          livedebugging {
-            enabled = {{ alloy_live_debugging_enabled | default(false) | bool | lower }}
-          }
-
-          prometheus.exporter.unix "host" {
-            enable_collectors = [
-              "cpu",
-              "filesystem",
-              "diskstats",
-              "loadavg",
-              "meminfo",
-              "netdev",
-              "stat",
-              "time",
-              "uname",
-            ]
-
-            filesystem {
-              fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
-              mount_points_exclude = "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+)($|/)"
-            }
-          }
-
-          prometheus.scrape "host" {
-            targets    = prometheus.exporter.unix.host.targets
-            forward_to = [prometheus.remote_write.default.receiver]
-          }
-
-          prometheus.remote_write "default" {
-            endpoint {
-              url = "{{ prometheus_remote_write_url }}"
-          {% if monitoring_gateway_scheme | default('http') == 'https' %}
-              tls_config {
-                server_name          = "{{ monitoring_gateway_tls_server_name }}"
-                insecure_skip_verify = {{ monitoring_gateway_tls_insecure_skip_verify | bool | lower }}
-              }
-          {% endif %}
-            }
-          }
-
-          loki.write "default" {
-            endpoint {
-              url = "{{ loki_push_url }}"
-          {% if monitoring_gateway_scheme | default('http') == 'https' %}
-              tls_config {
-                server_name          = "{{ monitoring_gateway_tls_server_name }}"
-                insecure_skip_verify = {{ monitoring_gateway_tls_insecure_skip_verify | bool | lower }}
-              }
-          {% endif %}
-            }
-          }
-
-          loki.source.file "nginx" {
-            targets = [
-              {
-                __path__ = "{{ alloy_nginx_log_path }}",
-                service  = "nginx",
-                source   = "file",
-              },
-            ]
-            forward_to    = [loki.write.default.receiver]
-            tail_from_end = true
-
-            file_match {
-              enabled     = true
-              sync_period = "10s"
-            }
-          }
-
-          loki.source.file "app" {
-            targets = [
-              {
-                __path__ = "{{ alloy_app_log_path }}",
-                service  = "{{ alloy_app_log_service }}",
-                source   = "file",
-              },
-            ]
-            forward_to    = [loki.write.default.receiver]
-            tail_from_end = true
-
-            file_match {
-              enabled     = true
-              sync_period = "10s"
-            }
-          }
-
-          otelcol.exporter.otlp "tempo" {
-            client {
-              endpoint = "{{ tempo_otlp_endpoint }}"
-              tls {
-                insecure = {{ (monitoring_gateway_scheme | default('http') != 'https') | bool | lower }}
-          {% if monitoring_gateway_scheme | default('http') == 'https' %}
-                server_name          = "{{ monitoring_gateway_tls_server_name }}"
-                insecure_skip_verify = {{ monitoring_gateway_tls_insecure_skip_verify | bool | lower }}
-          {% endif %}
-              }
-            }
-          }
 
   tasks:
     - name: Ensure observability group exists
@@ -149,25 +47,13 @@
       notify: Restart agent services
 
     - name: Allow selected users to read Alloy journal
-      ansible.builtin.copy:
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../configs/alloy-journal-readers.j2"
         dest: /etc/sudoers.d/alloy-journal-readers
         owner: root
         group: root
         mode: "0440"
         validate: "visudo -cf %s"
-        content: |
-          {% if alloy_journal_reader_full_access | default(false) | bool %}
-          Cmnd_Alias JOURNAL_READ = /usr/bin/journalctl, /usr/bin/journalctl *
-          {% else %}
-          Cmnd_Alias ALLOY_JOURNAL = /usr/bin/journalctl -u alloy.service, /usr/bin/journalctl -u alloy.service *, /usr/bin/journalctl --unit alloy.service, /usr/bin/journalctl --unit alloy.service *
-          {% endif %}
-          {% for user in alloy_journal_reader_users | default([]) %}
-          {% if alloy_journal_reader_full_access | default(false) | bool %}
-          {{ user }} ALL=(root) NOPASSWD: JOURNAL_READ
-          {% else %}
-          {{ user }} ALL=(root) NOPASSWD: ALLOY_JOURNAL
-          {% endif %}
-          {% endfor %}
       when: (alloy_journal_reader_users | default([])) | length > 0
 
     - name: Create agent base directories
@@ -237,9 +123,9 @@
       notify: Restart agent services
 
     - name: Write agent configs
-      ansible.builtin.copy:
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../configs/{{ item.config_template }}"
         dest: "{{ agent_config_dir }}/{{ item.config_file }}"
-        content: "{{ item.config_content }}"
         owner: "{{ observability_user }}"
         group: "{{ observability_group }}"
         mode: "0644"
@@ -248,26 +134,9 @@
       notify: Restart agent services
 
     - name: Install agent systemd units
-      ansible.builtin.copy:
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../configs/agent-component.service.j2"
         dest: "/etc/systemd/system/{{ item.name }}.service"
-        content: |
-          [Unit]
-          Description={{ item.description }}
-          After=network-online.target
-          Wants=network-online.target
-
-          [Service]
-          Type=simple
-          User={{ observability_user }}
-          Group={{ observability_group }}
-          WorkingDirectory={{ item.data_dir }}
-          ExecStart={{ item.deb_exec_path if (item.artifact_file | lower | regex_search('\.deb$')) else item.binary_exec_path }} {{ item.service_args }}
-          Restart=on-failure
-          RestartSec=5
-          LimitNOFILE=65536
-
-          [Install]
-          WantedBy=multi-user.target
         owner: root
         group: root
         mode: "0644"

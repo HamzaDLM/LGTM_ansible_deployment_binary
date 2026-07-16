@@ -1,0 +1,9 @@
+[paths]
+data = {{ lgtm_data_dir }}/grafana
+logs = {{ lgtm_data_dir }}/grafana/logs
+plugins = {{ lgtm_data_dir }}/grafana/plugins
+provisioning = {{ lgtm_config_dir }}/grafana/provisioning
+
+[server]
+http_addr = {{ lgtm_bind_address }}
+http_port = {{ grafana_http_port }}

@@ -1,0 +1,24 @@
+target: all
+
+server:
+  http_listen_address: {{ lgtm_bind_address }}
+  http_listen_port: {{ tempo_http_port }}
+  grpc_listen_address: {{ lgtm_bind_address }}
+  grpc_listen_port: {{ tempo_grpc_port | default(9097) }}
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: {{ lgtm_bind_address }}:4317
+        http:
+          endpoint: {{ lgtm_bind_address }}:4318
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: {{ lgtm_data_dir }}/tempo/wal
+    local:
+      path: {{ lgtm_data_dir }}/tempo/blocks
