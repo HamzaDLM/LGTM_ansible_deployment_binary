@@ -16,14 +16,17 @@
         | selectattr('key', 'in', alloy_effective_enabled_integrations)
         | list
       }}
+    alloy_default_log_reader_groups: "{{ ['adm', 'systemd-journal'] if ansible_os_family == 'Debian' else ['systemd-journal'] }}"
+    alloy_effective_log_reader_groups: "{{ alloy_log_reader_groups | default(alloy_default_log_reader_groups) }}"
+    agent_artifact_file: "{{ monitoring_component_files.alloy[ansible_os_family] if monitoring_component_files.alloy is mapping else monitoring_component_files.alloy }}"
     agent_components:
       - name: alloy
         enabled: "{{ (monitoring_components_enabled | default({})).alloy | default(true) | bool }}"
         description: Grafana Alloy
-        artifact_file: "{{ (monitoring_component_files | default({})).alloy | default('alloy.deb') }}"
+        artifact_file: "{{ agent_artifact_file }}"
         binary_dest: alloy
         binary_exec_path: "{{ agent_install_dir }}/bin/alloy"
-        deb_exec_path: /usr/bin/alloy
+        package_exec_path: /usr/bin/alloy
         config_file: config.alloy
         config_template: alloy/templates/config.alloy.j2
         data_dir: "{{ agent_data_dir }}/alloy"
@@ -34,6 +37,28 @@
           {{ agent_config_dir }}/config.alloy
 
   tasks:
+    - name: Validate agent host operating system
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == 'Debian' or (ansible_os_family == 'RedHat' and (ansible_distribution_major_version | int) >= 8)
+        fail_msg: >-
+          Unsupported operating system '{{ ansible_distribution }}
+          {{ ansible_distribution_version }}' on {{ inventory_hostname }}.
+          Supported platforms are Debian-family systems and RHEL-family version
+          8 or newer.
+
+    - name: Validate agent artifact package formats
+      ansible.builtin.assert:
+        that:
+          - not (item.artifact_file | lower | regex_search('\\.deb$')) or ansible_os_family == 'Debian'
+          - not (item.artifact_file | lower | regex_search('\\.rpm$')) or ansible_os_family == 'RedHat'
+        fail_msg: >-
+          Artifact '{{ item.artifact_file }}' for {{ item.name }} is incompatible
+          with {{ ansible_os_family }} on {{ inventory_hostname }}. Use .deb on
+          Debian, .rpm on RedHat, or a raw binary on either platform.
+      loop: "{{ agent_components }}"
+      when: item.enabled | bool
+
     - name: Validate Alloy enabled integrations list
       ansible.builtin.assert:
         that:
@@ -106,9 +131,7 @@
     - name: Allow observability user to read service logs
       ansible.builtin.user:
         name: "{{ observability_user }}"
-        groups:
-          - adm
-          - systemd-journal
+        groups: "{{ alloy_effective_log_reader_groups }}"
         append: true
       notify: Restart agent services
 
@@ -163,12 +186,13 @@
       loop: "{{ agent_components }}"
       when:
         - item.enabled | bool
-        - not (item.artifact_file | lower | regex_search('\\.deb$'))
+        - not (item.artifact_file | lower | regex_search('\\.(deb|rpm)$'))
       notify: Restart agent services
 
-    - name: Stage agent deb artifacts
+    - name: Stage agent package artifacts
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../files/deb/{{ item.artifact_file }}"
+        src: >-
+          {{ playbook_dir }}/../files/{{ 'deb' if (item.artifact_file | lower | regex_search('\.deb$')) else 'rpm' }}/{{ item.artifact_file }}
         dest: "/tmp/monitoring-packages/{{ item.artifact_file }}"
         owner: root
         group: root
@@ -176,7 +200,7 @@
       loop: "{{ agent_components }}"
       when:
         - item.enabled | bool
-        - item.artifact_file | lower | regex_search('\\.deb$')
+        - item.artifact_file | lower | regex_search('\\.(deb|rpm)$')
 
     - name: Install agent deb packages
       ansible.builtin.apt:
@@ -185,7 +209,20 @@
       loop: "{{ agent_components }}"
       when:
         - item.enabled | bool
+        - ansible_os_family == 'Debian'
         - item.artifact_file | lower | regex_search('\\.deb$')
+      notify: Restart agent services
+
+    - name: Install agent rpm packages
+      ansible.builtin.dnf:
+        name: "/tmp/monitoring-packages/{{ item.artifact_file }}"
+        state: present
+        disable_gpg_check: "{{ monitoring_rpm_disable_gpg_check | default(true) | bool }}"
+      loop: "{{ agent_components }}"
+      when:
+        - item.enabled | bool
+        - ansible_os_family == 'RedHat'
+        - item.artifact_file | lower | regex_search('\\.rpm$')
       notify: Restart agent services
 
     - name: Write agent configs

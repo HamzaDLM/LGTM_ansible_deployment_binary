@@ -13,11 +13,21 @@ monitoring_components_enabled:
   nginx: true
 
 monitoring_component_files:
-  grafana: grafana.deb
-  loki: loki
-  tempo: tempo.deb
-  prometheus: prometheus
-  alloy: alloy.deb
+  grafana:
+    Debian: grafana.deb
+    RedHat: grafana.rpm
+  loki:
+    Debian: loki
+    RedHat: loki
+  tempo:
+    Debian: tempo.deb
+    RedHat: tempo.rpm
+  prometheus:
+    Debian: prometheus
+    RedHat: prometheus
+  alloy:
+    Debian: alloy.deb
+    RedHat: alloy.rpm
 
 lgtm_install_dir: /opt/lgtm
 lgtm_config_dir: /etc/lgtm

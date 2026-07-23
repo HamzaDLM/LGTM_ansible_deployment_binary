@@ -9,11 +9,67 @@
     nginx_gateway_enabled: "{{ (monitoring_components_enabled | default({})).nginx | default(true) | bool }}"
 
   tasks:
+    - name: Validate Nginx host operating system
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == 'Debian' or (ansible_os_family == 'RedHat' and (ansible_distribution_major_version | int) >= 8)
+        fail_msg: >-
+          Unsupported operating system '{{ ansible_distribution }}
+          {{ ansible_distribution_version }}' on {{ inventory_hostname }}.
+          Supported platforms are Debian-family systems and RHEL-family version
+          8 or newer.
+
     - name: Install Nginx
       ansible.builtin.package:
         name: nginx
         state: present
       when: nginx_gateway_enabled | bool
+
+    - name: Install self-signed certificate tooling
+      ansible.builtin.package:
+        name: openssl
+        state: present
+      when:
+        - nginx_gateway_enabled | bool
+        - monitoring_gateway_tls_enabled | bool
+        - nginx_generate_self_signed_cert | bool
+
+    - name: Install RHEL SELinux management tooling
+      ansible.builtin.package:
+        name: policycoreutils-python-utils
+        state: present
+      when:
+        - nginx_gateway_enabled | bool
+        - ansible_os_family == 'RedHat'
+        - (ansible_selinux | default({})).status | default('disabled') == 'enabled'
+        - nginx_selinux_allow_network_connect | default(true) | bool
+
+    - name: Read Nginx SELinux network-connect policy
+      ansible.builtin.command:
+        argv:
+          - getsebool
+          - httpd_can_network_connect
+      register: nginx_selinux_network_connect
+      changed_when: false
+      when:
+        - nginx_gateway_enabled | bool
+        - ansible_os_family == 'RedHat'
+        - (ansible_selinux | default({})).status | default('disabled') == 'enabled'
+        - nginx_selinux_allow_network_connect | default(true) | bool
+
+    - name: Allow Nginx to connect to monitoring upstreams under SELinux
+      ansible.builtin.command:
+        argv:
+          - setsebool
+          - -P
+          - httpd_can_network_connect
+          - "on"
+      when:
+        - nginx_gateway_enabled | bool
+        - ansible_os_family == 'RedHat'
+        - (ansible_selinux | default({})).status | default('disabled') == 'enabled'
+        - nginx_selinux_allow_network_connect | default(true) | bool
+        - "'--> on' not in nginx_selinux_network_connect.stdout"
 
     - name: Create Nginx TLS directory
       ansible.builtin.file:

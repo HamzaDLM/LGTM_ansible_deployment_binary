@@ -6,27 +6,32 @@
   vars_files:
     - "../vars/common_{{ env | default('dev') }}.yaml"
   vars:
+    lgtm_artifact_files:
+      grafana: "{{ monitoring_component_files.grafana[ansible_os_family] if monitoring_component_files.grafana is mapping else monitoring_component_files.grafana }}"
+      loki: "{{ monitoring_component_files.loki[ansible_os_family] if monitoring_component_files.loki is mapping else monitoring_component_files.loki }}"
+      tempo: "{{ monitoring_component_files.tempo[ansible_os_family] if monitoring_component_files.tempo is mapping else monitoring_component_files.tempo }}"
+      prometheus: "{{ monitoring_component_files.prometheus[ansible_os_family] if monitoring_component_files.prometheus is mapping else monitoring_component_files.prometheus }}"
     lgtm_components:
       - name: grafana
         enabled: "{{ (monitoring_components_enabled | default({})).grafana | default(true) | bool }}"
         description: Grafana
-        artifact_file: "{{ (monitoring_component_files | default({})).grafana | default('grafana.deb') }}"
+        artifact_file: "{{ lgtm_artifact_files.grafana }}"
         binary_dest: grafana-server
         binary_exec_path: "{{ lgtm_install_dir }}/bin/grafana-server"
-        deb_exec_path: /usr/share/grafana/bin/grafana
+        package_exec_path: /usr/share/grafana/bin/grafana
         config_file: grafana.ini
         config_template: grafana.ini.j2
         data_dir: "{{ lgtm_data_dir }}/grafana"
         service_args: "--config={{ lgtm_config_dir }}/grafana.ini --homepath={{ grafana_home_dir }}"
-        deb_service_args: "server --config={{ lgtm_config_dir }}/grafana.ini --homepath=/usr/share/grafana"
+        package_service_args: "server --config={{ lgtm_config_dir }}/grafana.ini --homepath=/usr/share/grafana"
 
       - name: loki
         enabled: "{{ (monitoring_components_enabled | default({})).loki | default(true) | bool }}"
         description: Loki
-        artifact_file: "{{ (monitoring_component_files | default({})).loki | default('loki') }}"
+        artifact_file: "{{ lgtm_artifact_files.loki }}"
         binary_dest: loki
         binary_exec_path: "{{ lgtm_install_dir }}/bin/loki"
-        deb_exec_path: /usr/bin/loki
+        package_exec_path: /usr/bin/loki
         config_file: loki.yaml
         config_template: loki.yaml.j2
         data_dir: "{{ lgtm_data_dir }}/loki"
@@ -35,10 +40,10 @@
       - name: tempo
         enabled: "{{ (monitoring_components_enabled | default({})).tempo | default(true) | bool }}"
         description: Tempo
-        artifact_file: "{{ (monitoring_component_files | default({})).tempo | default('tempo.deb') }}"
+        artifact_file: "{{ lgtm_artifact_files.tempo }}"
         binary_dest: tempo
         binary_exec_path: "{{ lgtm_install_dir }}/bin/tempo"
-        deb_exec_path: /usr/bin/tempo
+        package_exec_path: /usr/bin/tempo
         config_file: tempo.yaml
         config_template: tempo.yaml.j2
         data_dir: "{{ lgtm_data_dir }}/tempo"
@@ -47,10 +52,10 @@
       - name: prometheus
         enabled: "{{ (monitoring_components_enabled | default({})).prometheus | default(true) | bool }}"
         description: Prometheus
-        artifact_file: "{{ (monitoring_component_files | default({})).prometheus | default('prometheus') }}"
+        artifact_file: "{{ lgtm_artifact_files.prometheus }}"
         binary_dest: prometheus
         binary_exec_path: "{{ lgtm_install_dir }}/bin/prometheus"
-        deb_exec_path: /usr/bin/prometheus
+        package_exec_path: /usr/bin/prometheus
         config_file: prometheus.yaml
         config_template: prometheus.yaml.j2
         data_dir: "{{ lgtm_data_dir }}/prometheus"
@@ -61,6 +66,28 @@
           --web.enable-remote-write-receiver
 
   tasks:
+    - name: Validate monitoring host operating system
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == 'Debian' or (ansible_os_family == 'RedHat' and (ansible_distribution_major_version | int) >= 8)
+        fail_msg: >-
+          Unsupported operating system '{{ ansible_distribution }}
+          {{ ansible_distribution_version }}' on {{ inventory_hostname }}.
+          Supported platforms are Debian-family systems and RHEL-family version
+          8 or newer.
+
+    - name: Validate monitoring artifact package formats
+      ansible.builtin.assert:
+        that:
+          - not (item.artifact_file | lower | regex_search('\\.deb$')) or ansible_os_family == 'Debian'
+          - not (item.artifact_file | lower | regex_search('\\.rpm$')) or ansible_os_family == 'RedHat'
+        fail_msg: >-
+          Artifact '{{ item.artifact_file }}' for {{ item.name }} is incompatible
+          with {{ ansible_os_family }} on {{ inventory_hostname }}. Use .deb on
+          Debian, .rpm on RedHat, or a raw binary on either platform.
+      loop: "{{ lgtm_components }}"
+      when: item.enabled | bool
+
     - name: Ensure observability group exists
       ansible.builtin.group:
         name: "{{ observability_group }}"
@@ -109,7 +136,7 @@
         mode: "0755"
       when:
         - (monitoring_components_enabled | default({})).grafana | default(true) | bool
-        - not ((monitoring_component_files | default({})).grafana | default('grafana.deb') | lower | regex_search('\\.deb$'))
+        - not (lgtm_artifact_files.grafana | lower | regex_search('\\.(deb|rpm)$'))
 
     - name: Provision Grafana datasources
       ansible.builtin.template:
@@ -149,12 +176,13 @@
       loop: "{{ lgtm_components }}"
       when:
         - item.enabled | bool
-        - not (item.artifact_file | lower | regex_search('\\.deb$'))
+        - not (item.artifact_file | lower | regex_search('\\.(deb|rpm)$'))
       notify: Restart monitoring services
 
-    - name: Stage monitoring deb artifacts
+    - name: Stage monitoring package artifacts
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../files/deb/{{ item.artifact_file }}"
+        src: >-
+          {{ playbook_dir }}/../files/{{ 'deb' if (item.artifact_file | lower | regex_search('\.deb$')) else 'rpm' }}/{{ item.artifact_file }}
         dest: "/tmp/monitoring-packages/{{ item.artifact_file }}"
         owner: root
         group: root
@@ -162,7 +190,7 @@
       loop: "{{ lgtm_components }}"
       when:
         - item.enabled | bool
-        - item.artifact_file | lower | regex_search('\\.deb$')
+        - item.artifact_file | lower | regex_search('\\.(deb|rpm)$')
 
     - name: Install monitoring deb packages
       ansible.builtin.apt:
@@ -171,7 +199,20 @@
       loop: "{{ lgtm_components }}"
       when:
         - item.enabled | bool
+        - ansible_os_family == 'Debian'
         - item.artifact_file | lower | regex_search('\\.deb$')
+      notify: Restart monitoring services
+
+    - name: Install monitoring rpm packages
+      ansible.builtin.dnf:
+        name: "/tmp/monitoring-packages/{{ item.artifact_file }}"
+        state: present
+        disable_gpg_check: "{{ monitoring_rpm_disable_gpg_check | default(true) | bool }}"
+      loop: "{{ lgtm_components }}"
+      when:
+        - item.enabled | bool
+        - ansible_os_family == 'RedHat'
+        - item.artifact_file | lower | regex_search('\\.rpm$')
       notify: Restart monitoring services
 
     - name: Write monitoring configs
