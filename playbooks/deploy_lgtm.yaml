@@ -158,6 +158,21 @@
       loop: "{{ lgtm_components }}"
       when: item.enabled | bool
 
+    - name: Create Tempo runtime directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0755"
+      loop:
+        - "{{ lgtm_data_dir }}/tempo/wal"
+        - "{{ lgtm_data_dir }}/tempo/blocks"
+        - "{{ lgtm_data_dir }}/tempo/live-store/traces"
+        - "{{ lgtm_data_dir }}/tempo/live-store/shutdown-marker"
+        - "{{ lgtm_data_dir }}/tempo/backend-work"
+      when: (monitoring_components_enabled | default({})).tempo | default(true) | bool
+
     - name: Create monitoring package cache directory
       ansible.builtin.file:
         path: /tmp/monitoring-packages

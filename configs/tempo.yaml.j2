@@ -15,6 +15,14 @@ distributor:
         http:
           endpoint: {{ lgtm_bind_address }}:4318
 
+live_store:
+  shutdown_marker_dir: {{ lgtm_data_dir }}/tempo/live-store/shutdown-marker
+  wal:
+    path: {{ lgtm_data_dir }}/tempo/live-store/traces
+
+backend_scheduler:
+  local_work_path: {{ lgtm_data_dir }}/tempo/backend-work
+
 storage:
   trace:
     backend: local
