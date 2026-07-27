@@ -19,6 +19,7 @@ Tower/AWX. Inventory files are intentionally omitted.
 - Set OS-specific artifact filenames under `monitoring_component_files`. Files ending in `.deb` are installed from `files/deb/`, files ending in `.rpm` are installed from `files/rpm/`, and every other file is copied from `files/bin/` as a raw binary.
 - Grafana should normally be installed from `grafana.deb` or `grafana.rpm`; a single `grafana-server` binary is not enough unless `grafana_home_dir` points to a full Grafana distribution with `conf/defaults.ini` and UI assets.
 - Grafana datasources are provisioned automatically for Prometheus, Loki, and Tempo under `/etc/lgtm/grafana/provisioning/datasources/monitoring.yaml`.
+- Grafana provisions the `Monitoring Stack Overview` dashboard automatically. Prometheus scrapes Grafana, Loki, Tempo, and itself to populate stack health and ingestion panels.
 - Rendered service configs and gateway configs are sourced from Jinja templates under `configs/`.
 - An importable Linux fleet dashboard is available at `files/grafana/dashboards/linux-fleet-overview.json`.
 - Alloy config is generated from modular templates under `configs/alloy/templates/`. Tower inventory host or group vars choose the integrations for each server.

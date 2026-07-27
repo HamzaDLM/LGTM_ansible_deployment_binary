@@ -125,6 +125,8 @@
         - "{{ lgtm_config_dir }}/grafana"
         - "{{ lgtm_config_dir }}/grafana/provisioning"
         - "{{ lgtm_config_dir }}/grafana/provisioning/datasources"
+        - "{{ lgtm_config_dir }}/grafana/provisioning/dashboards"
+        - "{{ lgtm_config_dir }}/grafana/dashboards"
       when: (monitoring_components_enabled | default({})).grafana | default(true) | bool
 
     - name: Create Grafana home directory
@@ -142,6 +144,26 @@
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../configs/grafana-datasources.yaml.j2"
         dest: "{{ lgtm_config_dir }}/grafana/provisioning/datasources/monitoring.yaml"
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0644"
+      when: (monitoring_components_enabled | default({})).grafana | default(true) | bool
+      notify: Restart monitoring services
+
+    - name: Provision Grafana dashboard provider
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../configs/grafana-dashboards.yaml.j2"
+        dest: "{{ lgtm_config_dir }}/grafana/provisioning/dashboards/monitoring.yaml"
+        owner: "{{ observability_user }}"
+        group: "{{ observability_group }}"
+        mode: "0644"
+      when: (monitoring_components_enabled | default({})).grafana | default(true) | bool
+      notify: Restart monitoring services
+
+    - name: Provision monitoring stack dashboard
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../configs/grafana/dashboards/monitoring-stack-overview.json.j2"
+        dest: "{{ lgtm_config_dir }}/grafana/dashboards/monitoring-stack-overview.json"
         owner: "{{ observability_user }}"
         group: "{{ observability_group }}"
         mode: "0644"
